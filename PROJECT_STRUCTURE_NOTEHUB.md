@@ -98,6 +98,9 @@ NoteHub/
 │       ├── window.go
 │       ├── navigation.go
 │       ├── theme.go
+│       ├── rails.go
+│       ├── typography/
+│       │   └── fonts.go
 │       ├── screens/
 │       │   ├── timeline.go
 │       │   ├── calendar.go
@@ -112,6 +115,8 @@ NoteHub/
 │       │   ├── tag_list.go
 │       │   ├── search_bar.go
 │       │   ├── attachment_card.go
+│       │   ├── image_gallery.go
+│       │   ├── surface.go
 │       │   └── calendar_widget.go
 │       └── dialogs/
 │           ├── attachment.go
@@ -193,7 +198,23 @@ Parser cho `#tag` và tag phân cấp như `#project/fpga`.
 Tách code đặc thù theo Windows/macOS/Linux bằng Go build tags.
 
 ### `internal/ui`
-GUI Fyne. Chia rõ `screens`, `components`, `dialogs`.
+GUI Fyne. Chia rõ `screens`, `components`, `dialogs`. `rails.go` quản lý bố cục
+3 vùng responsive, kéo thay đổi độ rộng và collapse sidebar mà không refresh
+lại toàn bộ cây widget trong lúc kéo. `components/surface.go` tạo panel bo góc:
+sidebar dùng nền phủ nhẹ, workspace dùng nền trung tính và khoảng trống giữa các
+panel thay cho vạch phân cách cố định.
+
+`components/image_gallery.go` hiển thị ảnh theo đúng tỉ lệ (`ImageFillContain`),
+hỗ trợ kéo đổi thứ tự và xóa ảnh trong editor. Grid ảnh 2 cột co theo workspace
+nhưng giới hạn tối đa 960 logical px và tự căn giữa khi hai sidebar được thu gọn,
+tránh kéo tile quá rộng. `screens/previews.go` giải mã ảnh ngoài UI thread, giới
+hạn ảnh nguồn 12 MP, tạo preview tối đa 640 × 420 và giữ cache hữu hạn để tránh
+tăng RAM không kiểm soát.
+
+`ui/typography/fonts.go` phát hiện các font phổ biến đã cài trên Windows/macOS/
+Linux và tải lazy bằng Fyne resource. Font không tồn tại tự fallback về System;
+NoteHub không đóng gói hoặc phân phối file font. Text size cho phép 10–32 logical
+px và tiếp tục tôn trọng DPI scale của hệ điều hành.
 
 ## Dữ liệu người dùng
 

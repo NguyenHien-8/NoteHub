@@ -6,9 +6,10 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
+	"github.com/NguyenHien-8/NoteHub/internal/ui/typography"
 )
 
-const defaultTextSize float32 = 14
+const defaultTextSize float32 = typography.DefaultTextSize
 
 const brandTextSizeName fyne.ThemeSizeName = "notehub.brand.text"
 
@@ -23,16 +24,11 @@ var favoriteIcon = fyne.NewStaticResource("favorite.svg", []byte(`<svg xmlns="ht
 func NewTheme(mode string) fyne.Theme { return newConfiguredTheme(mode, "System", defaultTextSize) }
 
 func newConfiguredTheme(mode, fontFamily string, textSize float32) fyne.Theme {
-	if textSize < 12 {
-		textSize = 12
-	}
-	if textSize > 18 {
-		textSize = 18
-	}
-	if !strings.EqualFold(fontFamily, "Monospace") {
+	fontFamily = strings.TrimSpace(fontFamily)
+	if !typography.IsKnownFamily(fontFamily) {
 		fontFamily = "System"
 	}
-	return &noteTheme{mode: mode, fontFamily: fontFamily, textSize: textSize}
+	return &noteTheme{mode: mode, fontFamily: fontFamily, textSize: typography.ClampTextSize(textSize)}
 }
 
 func (d *Desktop) applyTheme() {
@@ -54,8 +50,13 @@ func (d *Desktop) SetAppearance(mode string) {
 // visually consistent instead of each widget carrying ad-hoc sizing code.
 func (d *Desktop) SetTypography(fontFamily string, textSize float64) {
 	prefs := d.application.Preferences()
+	fontFamily = strings.TrimSpace(fontFamily)
+	if !typography.IsKnownFamily(fontFamily) {
+		fontFamily = "System"
+	}
+	size := typography.ClampTextSize(float32(textSize))
 	prefs.SetString("font-family", fontFamily)
-	prefs.SetFloat("font-size", textSize)
+	prefs.SetFloat("font-size", float64(size))
 	d.applyTheme()
 }
 
@@ -108,6 +109,9 @@ func (t *noteTheme) Font(style fyne.TextStyle) fyne.Resource {
 	if strings.EqualFold(t.fontFamily, "Monospace") {
 		return theme.DefaultTextMonospaceFont()
 	}
+	if resource := typography.Resolve(t.fontFamily, style); resource != nil {
+		return resource
+	}
 	return theme.DefaultTheme().Font(style)
 }
 func (t *noteTheme) Icon(n fyne.ThemeIconName) fyne.Resource { return theme.DefaultTheme().Icon(n) }
@@ -129,9 +133,9 @@ func (t *noteTheme) Size(n fyne.ThemeSizeName) float32 {
 	case theme.SizeNameInlineIcon:
 		return t.textSize + 4
 	case theme.SizeNamePadding:
-		return 6
+		return clampThemeSize(6+(t.textSize-defaultTextSize)*0.25, 4, 10)
 	case theme.SizeNameInnerPadding:
-		return 8
+		return clampThemeSize(8+(t.textSize-defaultTextSize)*0.3, 6, 14)
 	case theme.SizeNameScrollBar:
 		return 10
 	case theme.SizeNameScrollBarSmall:
@@ -142,4 +146,14 @@ func (t *noteTheme) Size(n fyne.ThemeSizeName) float32 {
 		return 10
 	}
 	return theme.DefaultTheme().Size(n)
+}
+
+func clampThemeSize(value, minimum, maximum float32) float32 {
+	if value < minimum {
+		return minimum
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
 }

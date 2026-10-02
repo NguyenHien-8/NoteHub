@@ -92,11 +92,11 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 		button.Importance = widget.LowImportance
 	}
 	filters := components.Surface(container.NewVBox(widget.NewLabelWithStyle("Quick Filters", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), d.all, d.favorites, d.shared))
-	right := container.New(insetLayout{12}, container.NewVScroll(container.New(layout.NewCustomPaddedVBoxLayout(14), d.mini.Object, filters)))
-	left := container.New(insetLayout{12}, d.sidebar.Object)
-	main := container.New(insetLayout{14}, d.center)
+	right := components.SidePanel(container.NewVScroll(container.New(layout.NewCustomPaddedVBoxLayout(14), d.mini.Object, filters)))
+	left := components.SidePanel(d.sidebar.Object)
+	main := components.WorkspacePanel(d.center)
 	d.rails = NewRails(left, main, right, application.Preferences())
-	columns := fyne.CanvasObject(d.rails)
+	columns := fyne.CanvasObject(container.New(insetLayout{10}, d.rails))
 	d.GlobalSearch = components.NewSearchBar(func(text string) {
 		// Update the query before navigation. Search.Refresh() cancels the
 		// debounce timer, avoiding two back-to-back list rebuilds and flicker.
@@ -118,7 +118,7 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 		container.NewHBox(leftToggle, logo, brand),
 		container.NewHBox(search, rightToggle),
 		layout.NewSpacer()))
-	w.SetContent(container.NewBorder(container.NewVBox(header, widget.NewSeparator()), nil, nil, nil, columns))
+	w.SetContent(container.NewBorder(header, nil, nil, nil, columns))
 	w.Resize(platform.InitialWindowSize(w.Canvas().Scale()))
 	w.CenterOnScreen()
 	focus := func(fyne.Shortcut) { w.Canvas().Focus(d.GlobalSearch) }

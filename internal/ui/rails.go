@@ -17,7 +17,7 @@ const (
 	minRightRailWidth     float32 = 272
 	maxRightRailWidth     float32 = 456
 	minCenterWidth        float32 = 400
-	railHandleWidth       float32 = 6
+	railHandleWidth       float32 = 10
 )
 
 // Rails is a three-column workspace with independently resizable/collapsible
@@ -242,8 +242,8 @@ func newRailHandle(owner *Rails, left bool) *railHandle {
 }
 
 func (h *railHandle) CreateRenderer() fyne.WidgetRenderer {
-	line := canvas.NewRectangle(color.NRGBA{R: 148, G: 163, B: 184, A: 80})
-	return widget.NewSimpleRenderer(line)
+	hitArea := canvas.NewRectangle(color.Transparent)
+	return widget.NewSimpleRenderer(hitArea)
 }
 
 func (h *railHandle) Cursor() desktop.Cursor { return desktop.HResizeCursor }

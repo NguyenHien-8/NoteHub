@@ -14,9 +14,12 @@ import (
 )
 
 const (
-	galleryGap        float32 = 8
-	galleryTileHeight float32 = 142
-	galleryMinWidth   float32 = 300
+	galleryGap             float32 = 10
+	galleryTileHeight      float32 = 300
+	galleryMinWidth        float32 = 300
+	galleryMaxContentWidth float32 = 960
+	gallerySingleMaxWidth  float32 = 720
+	galleryFooterHeight    float32 = 32
 )
 
 // ImageGallery renders every image attachment as a compact visual tile. When a
@@ -80,7 +83,10 @@ func (g *ImageGallery) MinSize() fyne.Size {
 	if len(g.tiles) == 0 {
 		return fyne.NewSize(0, 0)
 	}
-	columns := 2
+	columns := 1
+	if len(g.tiles) > 1 {
+		columns = 2
+	}
 	rows := (len(g.tiles) + columns - 1) / columns
 	return fyne.NewSize(galleryMinWidth, float32(rows)*galleryTileHeight+float32(max(0, rows-1))*galleryGap)
 }
@@ -186,21 +192,25 @@ type imageGalleryRenderer struct {
 }
 
 func (r *imageGalleryRenderer) Layout(size fyne.Size) {
-	if len(r.gallery.tiles) == 0 {
+	count := len(r.gallery.tiles)
+	if count == 0 {
 		return
 	}
 	columns := 1
-	if size.Width >= galleryMinWidth {
+	contentWidth := min(size.Width, gallerySingleMaxWidth)
+	if count > 1 {
 		columns = 2
+		contentWidth = min(size.Width, galleryMaxContentWidth)
 	}
-	width := size.Width
+	width := contentWidth
 	if columns == 2 {
-		width = (size.Width - galleryGap) / 2
+		width = (contentWidth - galleryGap) / 2
 	}
+	xOffset := max(float32(0), (size.Width-contentWidth)/2)
 	for index, tile := range r.gallery.tiles {
 		column := index % columns
 		row := index / columns
-		x := float32(column) * (width + galleryGap)
+		x := xOffset + float32(column)*(width+galleryGap)
 		y := float32(row) * (galleryTileHeight + galleryGap)
 		tile.object.Move(fyne.NewPos(x, y))
 		tile.object.Resize(fyne.NewSize(width, galleryTileHeight))
@@ -237,6 +247,7 @@ func newImageTile(gallery *ImageGallery, attachment domain.Attachment, thumbnail
 	t := &imageTile{gallery: gallery, attachment: attachment}
 	t.preview = canvas.NewImageFromImage(thumbnail)
 	t.preview.FillMode = canvas.ImageFillContain
+	t.preview.Translucency = 0
 	t.name = widget.NewLabel(boundedText(attachment.Filename, 28))
 	t.name.Truncation = fyne.TextTruncateEllipsis
 	t.name.Importance = widget.LowImportance
@@ -310,7 +321,7 @@ type imageTileRenderer struct {
 
 func (r *imageTileRenderer) Layout(size fyne.Size) {
 	r.background.Resize(size)
-	footerHeight := float32(30)
+	footerHeight := galleryFooterHeight
 	previewHeight := max(0, size.Height-footerHeight-4)
 	r.previewLayout(size.Width, previewHeight)
 	r.tile.name.Move(fyne.NewPos(8, previewHeight+4))

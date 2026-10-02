@@ -46,10 +46,7 @@ func (r *surfaceRenderer) Destroy()                     {}
 func (r *surfaceRenderer) Refresh() {
 	variant := fyne.CurrentApp().Settings().ThemeVariant()
 	background := r.owner.Theme().Color(theme.ColorNameInputBackground, variant)
-	red, green, blue, _ := background.RGBA()
-	// A forced Light/Dark theme can intentionally ignore the system variant.
-	// Use its resolved color so appearance settings also update the card surface.
-	if (red+green+blue)/3 < 0x8000 {
+	if resolvedDark(background) {
 		r.bg.FillColor = background
 		r.bg.StrokeColor = color.NRGBA{R: 55, G: 65, B: 81, A: 255}
 	} else {
@@ -58,6 +55,86 @@ func (r *surfaceRenderer) Refresh() {
 	}
 	r.bg.Refresh()
 	r.owner.content.Refresh()
+}
+
+type panelTone uint8
+
+const (
+	panelSide panelTone = iota
+	panelWorkspace
+)
+
+// SidePanel provides a soft activity/sidebar surface similar to a modern code
+// editor. WorkspacePanel uses a calmer center surface so the three regions stay
+// visually distinct without permanent divider lines.
+func SidePanel(content fyne.CanvasObject) fyne.CanvasObject {
+	return newChromePanel(content, panelSide, 10)
+}
+
+func WorkspacePanel(content fyne.CanvasObject) fyne.CanvasObject {
+	return newChromePanel(content, panelWorkspace, 12)
+}
+
+type chromePanel struct {
+	widget.BaseWidget
+	content fyne.CanvasObject
+	tone    panelTone
+}
+
+func newChromePanel(content fyne.CanvasObject, tone panelTone, padding float32) *chromePanel {
+	p := &chromePanel{content: container.New(layout.NewCustomPaddedLayout(padding, padding, padding, padding), content), tone: tone}
+	p.ExtendBaseWidget(p)
+	return p
+}
+
+func (p *chromePanel) CreateRenderer() fyne.WidgetRenderer {
+	background := canvas.NewRectangle(color.Transparent)
+	background.CornerRadius = 12
+	background.StrokeWidth = 1
+	r := &chromePanelRenderer{owner: p, background: background, objects: []fyne.CanvasObject{background, p.content}}
+	r.Refresh()
+	return r
+}
+
+type chromePanelRenderer struct {
+	owner      *chromePanel
+	background *canvas.Rectangle
+	objects    []fyne.CanvasObject
+}
+
+func (r *chromePanelRenderer) Layout(size fyne.Size) {
+	r.background.Resize(size)
+	r.owner.content.Resize(size)
+}
+func (r *chromePanelRenderer) MinSize() fyne.Size           { return r.owner.content.MinSize() }
+func (r *chromePanelRenderer) Objects() []fyne.CanvasObject { return r.objects }
+func (r *chromePanelRenderer) Destroy()                     {}
+func (r *chromePanelRenderer) Refresh() {
+	variant := fyne.CurrentApp().Settings().ThemeVariant()
+	resolved := r.owner.Theme().Color(theme.ColorNameBackground, variant)
+	dark := resolvedDark(resolved)
+	if dark {
+		r.background.StrokeColor = color.NRGBA{R: 51, G: 65, B: 85, A: 230}
+		if r.owner.tone == panelSide {
+			r.background.FillColor = color.NRGBA{R: 24, G: 33, B: 45, A: 255}
+		} else {
+			r.background.FillColor = color.NRGBA{R: 15, G: 23, B: 32, A: 255}
+		}
+	} else {
+		r.background.StrokeColor = color.NRGBA{R: 220, G: 228, B: 238, A: 255}
+		if r.owner.tone == panelSide {
+			r.background.FillColor = color.NRGBA{R: 242, G: 246, B: 251, A: 255}
+		} else {
+			r.background.FillColor = color.White
+		}
+	}
+	r.background.Refresh()
+	r.owner.content.Refresh()
+}
+
+func resolvedDark(c color.Color) bool {
+	red, green, blue, _ := c.RGBA()
+	return (red+green+blue)/3 < 0x8000
 }
 
 // scopedTheme keeps standard Fyne button focus, keyboard and disabled behavior

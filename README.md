@@ -55,18 +55,45 @@ awaiting CI verification.
   tag, and date filters. Diacritic-insensitive search lets `ghi chu` match
   `Ghi chú`.
 - **Attachments:** browse files, open them in the system application, reveal
-  their location, delete an attachment, or go to its note. Image files display
-  thumbnails; PDF and other files display file cards.
+  their location, delete an attachment, or go to its note. Image attachments
+  render in an aspect-preserving gallery with larger cached previews; image
+  order can be changed by dragging, and Edit note can remove an image directly.
+  PDF and other files display file cards.
 - **Tags:** select a tag to filter Home. **All Notes**, **Favorites**, and
   **Shared** show live counts; Shared counts notes with active, unexpired shares.
-- **Settings:** choose System, Light, or Dark appearance; open the data folder;
-  export or import a ZIP backup; configure local sharing; and view the version.
-  Backup import offers **Skip**, **Replace**, or **Duplicate** for conflicts.
+- **Settings:** choose System, Light, or Dark appearance; choose from common
+  font families installed on the current computer; set a custom 10–32 px text
+  size; open the data folder; export or import a ZIP backup; configure local
+  sharing; and view the version. Backup import offers **Skip**, **Replace**, or
+  **Duplicate** for conflicts.
 
 A saved note remains saved if one of its attachments fails to import; the app
 reports the failed file. Export backups to a new destination filename. Closing
 and reopening the application retains your saved notes, tags, favorites, and
 attachments. Existing databases are upgraded through additive migrations.
+
+
+### Responsive desktop layout
+
+The desktop shell uses three rounded panels: a softly tinted left navigation
+panel, a neutral workspace, and a softly tinted right information panel. The
+left and right panels can be resized or collapsed. Resize handles keep a wide
+hit target but are visually transparent, so panel spacing replaces permanent
+divider lines. On narrow windows one side panel can be suppressed temporarily
+without changing the saved user preference.
+
+Image gallery tiles preserve the source aspect ratio with `ImageFillContain`.
+The two-column gallery expands on normal windows but caps its visual grid at
+960 px and centers it when the workspace becomes very wide, avoiding the huge
+empty image cards that appeared after both sidebars were collapsed. Home/Edit
+previews are generated off the UI thread at up to 640 × 420 pixels, then cached
+with a bounded LRU-style usage map. The larger preview budget avoids blurry
+upscaling while keeping decoded image memory bounded.
+
+Typography is theme-wide instead of being applied per widget. NoteHub can use
+Fyne's System/Monospace faces or common fonts already installed by the OS. Font
+files are never bundled by NoteHub. Text size is stored as a logical pixel value
+from 10 to 32 and still follows the operating system's DPI/display scale.
 
 ## Data and sharing
 

@@ -16,6 +16,12 @@ import (
 
 // Previews bounds both decoded image dimensions and retained thumbnail memory.
 // All decoding happens inside a screen's worker, never during widget rendering.
+const (
+	previewMaxWidth  = 640
+	previewMaxHeight = 420
+	previewCacheMax  = 64
+)
+
 type Previews struct {
 	attachments *service.AttachmentService
 	mu          sync.Mutex
@@ -59,7 +65,7 @@ func (p *Previews) Image(ctx context.Context, a domain.Attachment) image.Image {
 	if err != nil || ctx.Err() != nil {
 		return nil
 	}
-	width, height := 300, 200
+	width, height := previewMaxWidth, previewMaxHeight
 	if cfg.Width*height > cfg.Height*width {
 		height = max(1, cfg.Height*width/cfg.Width)
 	} else {
@@ -68,7 +74,7 @@ func (p *Previews) Image(ctx context.Context, a domain.Attachment) image.Image {
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
 	draw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Src, nil)
 	p.mu.Lock()
-	if len(p.cache) >= 120 {
+	if len(p.cache) >= previewCacheMax {
 		var oldest string
 		for k, age := range p.used {
 			if oldest == "" || age < p.used[oldest] {
