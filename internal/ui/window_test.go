@@ -171,10 +171,10 @@ func TestDesktopCreateFilterNavigateAndReopen(t *testing.T) {
 			t.Fatal(page)
 		}
 	}
-	application.Settings().SetTheme(NewTheme("Dark"))
+	desktop.SetAppearance("Dark")
 	desktop.Window.Resize(fyne.NewSize(1100, 700))
 	flush()
-	application.Settings().SetTheme(NewTheme("Light"))
+	desktop.SetAppearance("Light")
 	desktop.Window.Resize(fyne.NewSize(1450, 900))
 	flush()
 	// A separate handle reads the committed note and favorite, just as a restart does.
@@ -231,7 +231,7 @@ func TestDesktopReferenceRendering(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []string{"Light", "Dark"} {
-		application.Settings().SetTheme(NewTheme(mode))
+		desktop.SetAppearance(mode)
 		desktop.Window.Resize(fyne.NewSize(1450, 900))
 		f, err := os.Create(filepath.Join(output, "notehub-"+mode+".png"))
 		if err != nil {
@@ -243,7 +243,7 @@ func TestDesktopReferenceRendering(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	application.Settings().SetTheme(NewTheme("Light"))
+	desktop.SetAppearance("Light")
 	desktop.Window.Resize(fyne.NewSize(1100, 700))
 	f, err := os.Create(filepath.Join(output, "notehub-narrow.png"))
 	if err != nil {

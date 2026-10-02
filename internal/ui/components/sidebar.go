@@ -41,8 +41,8 @@ func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *S
 		button.Alignment = widget.ButtonAlignLeading
 		button.Importance = widget.LowImportance
 		s.buttons[id] = button
-		// Keep each button in one stable theme container. Reparenting the same
-		// widget on every navigation can discard native renderer resources.
+		// Keep each button in one stable theme container to avoid rebuilding
+		// the menu and its theme scopes on every navigation.
 		s.menu.Add(container.NewThemeOverride(button, scopedTheme{
 			background: color.NRGBA{R: 234, G: 243, B: 255, A: 255}, foreground: primaryBlue,
 		}))

@@ -25,6 +25,7 @@ import (
 
 type Desktop struct {
 	fyne.Window
+	application            fyne.App
 	Backend                *app.Backend
 	Jobs                   *work.Runner
 	Home                   *screens.Timeline
@@ -59,7 +60,7 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 	w.SetIcon(assets.Logo)
 	w.SetPadded(false)
 	now := time.Now()
-	d := &Desktop{Window: w, Backend: b, Jobs: jobs, month: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local), center: container.NewStack(), stopTick: make(chan struct{})}
+	d := &Desktop{Window: w, application: application, Backend: b, Jobs: jobs, month: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local), center: container.NewStack(), stopTick: make(chan struct{})}
 	d.manager = dialogs.New(b, w, jobs, d.Refresh)
 	env := &screens.Environment{Backend: b, Window: w, Jobs: jobs, Previews: screens.NewPreviews(b.Attachments), Changed: d.Refresh, Tag: d.showTag, Memo: d.manager.ShowMemo, PickFiles: d.manager.PickFiles, PickTag: d.manager.PickTag}
 	env.Actions = components.MemoActions{
@@ -70,7 +71,7 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 	d.Calendar = screens.NewCalendar(env)
 	d.Attachments = screens.NewAttachments(env)
 	d.tags = screens.NewTags(d.showTag)
-	d.settings = screens.NewSettings(env, application, d.manager, version, func(mode string) { application.Settings().SetTheme(NewTheme(mode)) })
+	d.settings = screens.NewSettings(env, application, d.manager, version, d.SetAppearance)
 	d.sidebar = components.NewSidebar(d.Navigate, d.showTag, func() { d.Navigate("home"); d.manager.PickTag(d.Home.Composer.InsertTag) })
 	d.mini = components.NewCalendar(d.showDate, func(delta int) { d.month = d.month.AddDate(0, delta, 0); d.refreshMini() })
 	d.mini.SetMonth(d.month.Year(), d.month.Month(), nil, "")

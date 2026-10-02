@@ -35,6 +35,10 @@ and folders. A graphical desktop session and OpenGL support are required on all
 platforms. See [build instructions](docs/BUILD.md) for dependencies, versioned
 builds, direct Go commands, and release artifacts.
 
+See the [desktop verification report](docs/DESKTOP_TEST_REPORT.md) for the
+commands run, Windows build results, changed files, and platform checks still
+awaiting CI verification.
+
 ## Use NoteHub
 
 - **Home:** write a note and click **Save**. **Attach** stages files until the

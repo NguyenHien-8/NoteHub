@@ -23,6 +23,9 @@ backend services. The `work.Runner` owns cancellable worker lifetimes and
 posts results through `fyne.Do`. Query generations reject outdated results.
 The UI waits for workers before closing sharing and SQLite.
 
+`Desktop.SetAppearance` applies the selected theme and refreshes the content
+tree so scoped button themes and native text/icon caches repaint together.
+
 Timeline uses 40-note keyset pages. Calendar boundaries use local calendar
 arithmetic, including DST. Search has a 300 ms debounce. Image previews are
 decoded off the UI thread, capped at 12 million source pixels and retained in

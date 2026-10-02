@@ -66,10 +66,10 @@ func main() {
 					// Flush callbacks posted by workers before asserting/rendering.
 					fyne.DoAndWait(func() {})
 				}
-				for _, mode := range []string{"Light", "Dark"} {
+				for _, mode := range []string{"Light", "Dark", "Light", "Dark"} {
 					fyne.DoAndWait(func() {
 						desktop.Navigate("home")
-						application.Settings().SetTheme(ui.NewTheme(mode))
+						desktop.SetAppearance(mode)
 					})
 					if err := captureSettled(desktop, filepath.Join(*output, "native-"+mode+".png")); err != nil {
 						return fmt.Errorf("%s: %w", mode, err)
@@ -105,7 +105,15 @@ func captureSettled(desktop *ui.Desktop, path string) error {
 		}
 		var encoded bytes.Buffer
 		var captureErr error
+		ready := true
 		fyne.DoAndWait(func() {
+			c := desktop.Canvas()
+			width, height := c.PixelCoordinateForPosition(fyne.NewPos(c.Size().Width, c.Size().Height))
+			if width <= 0 || height <= 0 {
+				// Windows can report a zero framebuffer while minimized/resizing.
+				ready = false
+				return
+			}
 			captured := desktop.Canvas().Capture()
 			if captured == nil || captured.Bounds().Dx() < 1000 {
 				captureErr = fmt.Errorf("native canvas was not rendered")
@@ -124,6 +132,10 @@ func captureSettled(desktop *ui.Desktop, path string) error {
 		})
 		if captureErr != nil {
 			return captureErr
+		}
+		if !ready {
+			stable = 0
+			continue
 		}
 		current := sha256.Sum256(encoded.Bytes())
 		if current == previous {

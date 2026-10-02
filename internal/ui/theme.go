@@ -11,6 +11,17 @@ type noteTheme struct{ mode string }
 var favoriteIcon = fyne.NewStaticResource("favorite.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.5l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9z" fill="none" stroke="#F5A623" stroke-width="2" stroke-linejoin="round"/></svg>`))
 
 func NewTheme(mode string) fyne.Theme { return &noteTheme{mode: mode} }
+
+// SetAppearance must be called on the UI thread, like other widget updates.
+func (d *Desktop) SetAppearance(mode string) {
+	d.application.Settings().SetTheme(NewTheme(mode))
+	// Refresh scoped-theme descendants as well, including native text/icon
+	// caches whose foreground color can stay the same across theme variants.
+	if content := d.Content(); content != nil {
+		content.Refresh()
+	}
+}
+
 func (t *noteTheme) variant(v fyne.ThemeVariant) fyne.ThemeVariant {
 	if t.mode == "Light" {
 		return theme.VariantLight
