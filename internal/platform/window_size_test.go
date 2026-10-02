@@ -8,9 +8,9 @@ import (
 
 func TestWindowClientSizeFitsScaledWorkArea(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		work fyne.Size
-		scale float32
+		name   string
+		work   fyne.Size
+		scale  float32
 		chrome fyne.Size
 	}{
 		{"1366x768 at150", fyne.NewSize(1366, 728), 1.5, fyne.NewSize(24, 58)},

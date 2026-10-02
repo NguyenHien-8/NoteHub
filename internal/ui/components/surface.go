@@ -190,3 +190,76 @@ func trimTag(tag string) string {
 	}
 	return tag
 }
+
+// ControlSurface gives compact form controls a visible, theme-aware field
+// background while preserving the native Select/Entry interaction, focus,
+// keyboard navigation and hover behavior. The child controls use a transparent
+// input background so one clean rounded field is rendered instead of stacked
+// nested rectangles.
+func ControlSurface(content fyne.CanvasObject) fyne.CanvasObject {
+	themed := container.NewThemeOverride(content, controlSurfaceTheme{})
+	s := &controlSurface{content: container.New(layout.NewCustomPaddedLayout(2, 2, 4, 4), themed)}
+	s.ExtendBaseWidget(s)
+	return s
+}
+
+type controlSurface struct {
+	widget.BaseWidget
+	content fyne.CanvasObject
+}
+
+func (s *controlSurface) CreateRenderer() fyne.WidgetRenderer {
+	background := canvas.NewRectangle(color.Transparent)
+	background.CornerRadius = 9
+	background.StrokeWidth = 1
+	r := &controlSurfaceRenderer{owner: s, background: background, objects: []fyne.CanvasObject{background, s.content}}
+	r.Refresh()
+	return r
+}
+
+type controlSurfaceRenderer struct {
+	owner      *controlSurface
+	background *canvas.Rectangle
+	objects    []fyne.CanvasObject
+}
+
+func (r *controlSurfaceRenderer) Layout(size fyne.Size) {
+	r.background.Resize(size)
+	r.owner.content.Resize(size)
+}
+func (r *controlSurfaceRenderer) MinSize() fyne.Size           { return r.owner.content.MinSize() }
+func (r *controlSurfaceRenderer) Objects() []fyne.CanvasObject { return r.objects }
+func (r *controlSurfaceRenderer) Destroy()                     {}
+func (r *controlSurfaceRenderer) Refresh() {
+	variant := fyne.CurrentApp().Settings().ThemeVariant()
+	th := r.owner.Theme()
+	r.background.FillColor = th.Color(theme.ColorNameButton, variant)
+	r.background.StrokeColor = th.Color(theme.ColorNameInputBorder, variant)
+	r.background.Refresh()
+	r.owner.content.Refresh()
+}
+
+// controlSurfaceTheme removes a child input's own flat background/border so
+// ControlSurface can provide one consistent field chrome around Select, Entry,
+// or a compound control such as "12 px". All other theme values delegate to
+// the active NoteHub theme and therefore still react immediately to Light/Dark,
+// font-family and text-size changes.
+type controlSurfaceTheme struct{}
+
+func (controlSurfaceTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	switch name {
+	case theme.ColorNameInputBackground, theme.ColorNameInputBorder:
+		return color.Transparent
+	default:
+		return fyne.CurrentApp().Settings().Theme().Color(name, variant)
+	}
+}
+func (controlSurfaceTheme) Font(style fyne.TextStyle) fyne.Resource {
+	return fyne.CurrentApp().Settings().Theme().Font(style)
+}
+func (controlSurfaceTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
+	return fyne.CurrentApp().Settings().Theme().Icon(name)
+}
+func (controlSurfaceTheme) Size(name fyne.ThemeSizeName) float32 {
+	return fyne.CurrentApp().Settings().Theme().Size(name)
+}

@@ -3,11 +3,11 @@ package screens
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/NguyenHien-8/NoteHub/internal/platform"
 	"github.com/NguyenHien-8/NoteHub/internal/ui/components"
@@ -21,13 +21,18 @@ func NewSettings(env *Environment, application fyne.App, manager *dialogs.Manage
 		return components.Surface(container.NewVBox(append([]fyne.CanvasObject{widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})}, objects...)...))
 	}
 	fixedWidth := func(width float32, object fyne.CanvasObject) fyne.CanvasObject {
-		height := max(float32(38), object.MinSize().Height)
+		height := max(float32(40), object.MinSize().Height)
 		return container.NewGridWrap(fyne.NewSize(width, height), object)
 	}
-	field := func(label string, object fyne.CanvasObject) fyne.CanvasObject {
+	settingRow := func(label string, object fyne.CanvasObject) fyne.CanvasObject {
 		name := widget.NewLabel(label)
 		name.Importance = widget.LowImportance
-		return container.NewVBox(name, object)
+		// Border keeps the label pinned to the left edge and the field pinned to
+		// the right edge without relying on a Form's label sizing heuristics.
+		return container.NewBorder(nil, nil, name, object, layout.NewSpacer())
+	}
+	control := func(width float32, object fyne.CanvasObject) fyne.CanvasObject {
+		return fixedWidth(width, components.ControlSurface(object))
 	}
 
 	appearance := widget.NewSelect([]string{"System", "Light", "Dark"}, nil)
@@ -53,63 +58,43 @@ func NewSettings(env *Environment, application fyne.App, manager *dialogs.Manage
 	textSize := widget.NewEntry()
 	textSize.SetText(formatTextSize(currentSize))
 	textSize.SetPlaceHolder(formatTextSize(typography.DefaultTextSize))
-	textSize.Validator = func(value string) error {
-		size, err := strconv.ParseFloat(value, 32)
-		if err != nil || size < float64(typography.MinTextSize) || size > float64(typography.MaxTextSize) {
-			return fmt.Errorf("enter a size from %.0f to %.0f px", typography.MinTextSize, typography.MaxTextSize)
-		}
-		return nil
-	}
-	textHint := widget.NewLabel(fmt.Sprintf("Custom size: %.0f–%.0f px. The value follows Windows/macOS/Linux display scaling.", typography.MinTextSize, typography.MaxTextSize))
-	textHint.Importance = widget.LowImportance
-	fontHint := widget.NewLabel("The font list uses families installed on this computer; NoteHub does not bundle system font files.")
-	fontHint.Importance = widget.LowImportance
-	fontHint.Wrapping = fyne.TextWrapWord
 
-	applyTypography := func(showError bool) bool {
-		if setTypography == nil {
-			return true
+	// Typography changes are intentionally live. Theme and font selects apply
+	// immediately, while text size applies as soon as the entry contains a
+	// complete valid value. Intermediate typing such as "" or "1" is ignored
+	// instead of flashing an error dialog or rebuilding the theme unnecessarily.
+	applyFont := func() {
+		if setTypography != nil {
+			setTypography(font.Selected, float64(currentSize))
 		}
-		size, err := strconv.ParseFloat(textSize.Text, 64)
+	}
+	font.OnChanged = func(string) { applyFont() }
+	textSize.OnChanged = func(value string) {
+		size, err := strconv.ParseFloat(value, 64)
 		if err != nil || size < float64(typography.MinTextSize) || size > float64(typography.MaxTextSize) {
-			if showError {
-				env.Error(fmt.Errorf("text size must be between %.0f and %.0f px", typography.MinTextSize, typography.MaxTextSize))
-			}
-			return false
+			return
+		}
+		if currentSize == float32(size) {
+			return
 		}
 		currentSize = float32(size)
-		setTypography(font.Selected, size)
-		return true
+		if setTypography != nil {
+			setTypography(font.Selected, size)
+		}
 	}
-	font.OnChanged = func(string) {
-		if !applyTypography(false) {
+	textSize.OnSubmitted = func(value string) {
+		size, err := strconv.ParseFloat(value, 64)
+		if err != nil || size < float64(typography.MinTextSize) || size > float64(typography.MaxTextSize) {
 			textSize.SetText(formatTextSize(currentSize))
-			applyTypography(false)
 		}
 	}
-	textSize.OnSubmitted = func(string) { applyTypography(true) }
 
-	stepTextSize := func(delta float64) {
-		size, err := strconv.ParseFloat(textSize.Text, 64)
-		if err != nil {
-			size = float64(currentSize)
-		}
-		size = math.Max(float64(typography.MinTextSize), math.Min(float64(typography.MaxTextSize), size+delta))
-		textSize.SetText(formatTextSize(float32(size)))
-		applyTypography(false)
-	}
-	decrease := widget.NewButton("−", func() { stepTextSize(-1) })
-	increase := widget.NewButton("+", func() { stepTextSize(1) })
-	applySize := widget.NewButton("Apply", func() { applyTypography(true) })
-	decrease.Importance, increase.Importance, applySize.Importance = widget.LowImportance, widget.LowImportance, widget.LowImportance
-	textSizeRow := container.NewHBox(fixedWidth(92, textSize), widget.NewLabel("px"), decrease, increase, applySize)
-
+	const fieldWidth float32 = 320
+	textSizeField := container.NewBorder(nil, nil, nil, widget.NewLabel("px"), textSize)
 	typographySettings := container.NewVBox(
-		field("Theme", fixedWidth(260, appearance)),
-		field("Font", fixedWidth(340, font)),
-		fontHint,
-		field("Text size", textSizeRow),
-		textHint,
+		settingRow("Theme", control(fieldWidth, appearance)),
+		settingRow("Font", control(fieldWidth, font)),
+		settingRow("Text size", control(fieldWidth, textSizeField)),
 	)
 
 	dataPath := widget.NewLabel(env.Backend.Paths.Root)
