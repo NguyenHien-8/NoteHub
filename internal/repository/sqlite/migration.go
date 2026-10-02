@@ -17,6 +17,15 @@ var migrations = []migration{
 		ALTER TABLE memo ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0,1));
 		CREATE INDEX idx_memo_favorites ON memo(created_ts DESC,id DESC) WHERE favorite=1;
 	`},
+	{version: 3, name: "attachment order", sql: `
+		ALTER TABLE attachment ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0);
+		WITH ranked AS (
+			SELECT id,ROW_NUMBER() OVER (PARTITION BY memo_id ORDER BY created_ts ASC,id ASC)-1 AS position
+			FROM attachment
+		)
+		UPDATE attachment SET sort_order=(SELECT position FROM ranked WHERE ranked.id=attachment.id);
+		CREATE INDEX idx_attachment_order ON attachment(memo_id,sort_order,id);
+	`},
 }
 
 func (s *Store) Migrate(ctx context.Context) error {

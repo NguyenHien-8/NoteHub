@@ -45,9 +45,6 @@ func (s *CalendarScreen) Refresh() {
 	s.thumbs = make(map[int64]image.Image)
 	s.cursor = nil
 	s.loading = false
-	s.list.SetMemos(nil, nil, s.env.Actions)
-	s.list.SetMore(false, nil)
-	s.calendar.SetMonth(month.Year(), month.Month(), nil, s.selected)
 	work.Run(s.env.Jobs, func(ctx context.Context) ([]domain.CalendarDay, error) {
 		return s.env.Backend.Calendar.Month(ctx, month.Year(), month.Month(), time.Local)
 	}, func(days []domain.CalendarDay, err error) {

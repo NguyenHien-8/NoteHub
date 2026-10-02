@@ -7,6 +7,7 @@ import (
 
 func NewSearchBar(onChanged func(string)) *widget.Entry {
 	entry := widget.NewEntry()
+	entry.Scroll = widget.ScrollHorizontalOnly
 	entry.SetPlaceHolder("Tìm kiếm ghi chú, tag, nội dung…")
 	entry.Icon = theme.SearchIcon()
 	entry.OnChanged = onChanged

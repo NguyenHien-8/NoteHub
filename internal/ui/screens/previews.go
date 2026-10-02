@@ -20,10 +20,12 @@ type Previews struct {
 	attachments *service.AttachmentService
 	mu          sync.Mutex
 	cache       map[string]image.Image
+	used        map[string]uint64
+	clock       uint64
 }
 
 func NewPreviews(s *service.AttachmentService) *Previews {
-	return &Previews{attachments: s, cache: make(map[string]image.Image)}
+	return &Previews{attachments: s, cache: make(map[string]image.Image), used: make(map[string]uint64)}
 }
 
 func (p *Previews) Image(ctx context.Context, a domain.Attachment) image.Image {
@@ -33,6 +35,10 @@ func (p *Previews) Image(ctx context.Context, a domain.Attachment) image.Image {
 	key := a.UID + ":" + a.SHA256
 	p.mu.Lock()
 	cached, ok := p.cache[key]
+	p.clock++
+	if ok {
+		p.used[key] = p.clock
+	}
 	p.mu.Unlock()
 	if ok {
 		return cached
@@ -63,9 +69,18 @@ func (p *Previews) Image(ctx context.Context, a domain.Attachment) image.Image {
 	draw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Src, nil)
 	p.mu.Lock()
 	if len(p.cache) >= 120 {
-		clear(p.cache)
+		var oldest string
+		for k, age := range p.used {
+			if oldest == "" || age < p.used[oldest] {
+				oldest = k
+			}
+		}
+		delete(p.cache, oldest)
+		delete(p.used, oldest)
 	}
 	p.cache[key] = dst
+	p.clock++
+	p.used[key] = p.clock
 	p.mu.Unlock()
 	return dst
 }
@@ -78,8 +93,7 @@ func (p *Previews) Memos(ctx context.Context, memos []domain.Memo) map[int64]ima
 		}
 		for _, a := range m.Attachments {
 			if img := p.Image(ctx, a); img != nil {
-				out[m.ID] = img
-				break
+				out[a.ID] = img
 			}
 		}
 	}

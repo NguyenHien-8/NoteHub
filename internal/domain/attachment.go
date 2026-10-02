@@ -8,6 +8,7 @@ type Attachment struct {
 	ID           int64     `json:"-"`
 	UID          string    `json:"uid"`
 	MemoID       int64     `json:"-"`
+	Position     int       `json:"position"`
 	CreatedAt    time.Time `json:"createdAt"`
 	Filename     string    `json:"filename"`
 	MIMEType     string    `json:"mimeType"`

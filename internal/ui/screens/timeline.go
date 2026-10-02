@@ -24,7 +24,7 @@ type Timeline struct {
 	List       *components.TimelineList
 	env        *Environment
 	caption    *widget.Label
-	progress   *widget.ProgressBarInfinite
+	progress   *widget.Label
 	filter     repository.TimelineQuery
 	date       string
 	items      []domain.Memo
@@ -36,11 +36,11 @@ type Timeline struct {
 }
 
 func NewTimeline(env *Environment) *Timeline {
-	s := &Timeline{env: env, caption: widget.NewLabel("All Notes"), progress: widget.NewProgressBarInfinite(), List: components.NewTimelineList()}
-	s.progress.Hide()
+	s := &Timeline{env: env, caption: widget.NewLabel("All Notes"), progress: widget.NewLabel(""), List: components.NewTimelineList()}
+	s.progress.Importance = widget.LowImportance
 	s.Composer = components.NewComposer(s.save, func() { env.PickFiles(s.Composer.AddPaths) }, func() { env.PickTag(s.Composer.InsertTag) })
 	clear := widget.NewButton("Clear filters", func() { s.Filter(repository.TimelineQuery{}, "") })
-	header := container.NewVBox(s.Composer.Object, container.NewBorder(nil, nil, s.caption, clear), s.progress)
+	header := container.NewVBox(s.Composer.Object, container.NewBorder(nil, nil, container.NewHBox(s.caption, s.progress), clear))
 	s.Object = container.NewBorder(header, nil, nil, nil, s.List.Object)
 	return s
 }
@@ -67,8 +67,6 @@ func (s *Timeline) Refresh() {
 	s.items = nil
 	s.thumbs = make(map[int64]image.Image)
 	s.cursor = nil
-	s.List.SetMemos(nil, nil, s.env.Actions)
-	s.List.SetMore(false, nil)
 	caption := "All Notes"
 	if s.filter.FavoriteOnly {
 		caption = "Favorites"
@@ -97,8 +95,7 @@ func (s *Timeline) load() {
 		return
 	}
 	s.loading = true
-	s.progress.Show()
-	s.progress.Start()
+	s.progress.SetText("Loading…")
 	generation, q, date, cursor := s.generation, s.filter, s.date, s.cursor
 	q.Limit = 40
 	q.Cursor = cursor
@@ -120,8 +117,7 @@ func (s *Timeline) load() {
 			return
 		}
 		s.loading = false
-		s.progress.Stop()
-		s.progress.Hide()
+		s.progress.SetText("")
 		if err != nil {
 			s.env.Error(err)
 			s.List.SetMore(true, s.load)

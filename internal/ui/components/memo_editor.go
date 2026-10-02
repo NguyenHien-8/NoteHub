@@ -27,7 +27,7 @@ func NewComposer(onSave func(string, []string), onAttach, onTag func()) *Compose
 	c := &Composer{Entry: widget.NewMultiLineEntry(), staged: container.NewVBox()}
 	c.Entry.SetPlaceHolder("Có suy nghĩ gì...")
 	c.Entry.Wrapping = fyne.TextWrapWord
-	c.Entry.SetMinRowsVisible(4)
+	c.Entry.SetMinRowsVisible(3)
 	c.save = widget.NewButton("Save", func() {
 		if c.busy || (strings.TrimSpace(c.Entry.Text) == "" && len(c.paths) == 0) || onSave == nil {
 			return

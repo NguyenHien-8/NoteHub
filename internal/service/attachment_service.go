@@ -87,6 +87,12 @@ func (s *AttachmentService) ListAll(ctx context.Context, limit, offset int) ([]d
 	return s.attachments.ListAllAttachments(ctx, limit, offset)
 }
 
+// Reorder saves a complete attachment ordering for a memo. Callers must include
+// non-image attachments too; a stale attachment set returns domain.ErrConflict.
+func (s *AttachmentService) Reorder(ctx context.Context, memoID int64, orderedIDs []int64) error {
+	return s.attachments.ReorderAttachments(ctx, memoID, orderedIDs)
+}
+
 func (s *AttachmentService) Open(ctx context.Context, attachmentID int64) (*os.File, *domain.Attachment, error) {
 	a, err := s.attachments.GetAttachmentByID(ctx, attachmentID)
 	if err != nil {

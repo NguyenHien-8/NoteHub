@@ -77,8 +77,6 @@ func (s *Search) Refresh() {
 	from, to, err := searchDates(s.From.Text, s.To.Text, time.Local)
 	s.items = nil
 	s.thumbs = make(map[int64]image.Image)
-	s.list.SetMemos(nil, nil, s.env.Actions)
-	s.list.SetMore(false, nil)
 	if err != nil {
 		s.status.SetText(err.Error())
 		return

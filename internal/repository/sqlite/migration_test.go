@@ -112,7 +112,7 @@ func TestMigrationV1RetainsMemoTagsAttachmentsSharesAndFTS(t *testing.T) {
 			s.Close()
 			t.Fatal(err)
 		}
-		if version != 2 || count != 2 {
+		if version != 3 || count != 3 {
 			s.Close()
 			t.Fatalf("migration version=%d count=%d", version, count)
 		}
