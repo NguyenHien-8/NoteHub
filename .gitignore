@@ -2,6 +2,7 @@
 build/
 dist/
 bin/
+/notehub.exe
 
 # Local data
 *.db

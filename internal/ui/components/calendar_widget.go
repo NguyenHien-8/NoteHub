@@ -44,7 +44,7 @@ func NewCalendar(onDay func(string), onMonth func(int)) *Calendar {
 		label.Importance = widget.LowImportance
 		week.Add(container.NewThemeOverride(label, scopedTheme{compact: true, background: primaryBlue, foreground: color.White}))
 	}
-	c.Object = Surface(container.New(layout.NewCustomPaddedVBoxLayout(8), header, week, c.grid))
+	c.Object = container.NewThemeOverride(Surface(container.New(layout.NewCustomPaddedVBoxLayout(8), header, week, c.grid)), scopedTheme{compact: true, background: primaryBlue, foreground: color.White})
 	return c
 }
 
@@ -76,9 +76,6 @@ func (c *Calendar) SetMonth(year int, month time.Month, days []domain.CalendarDa
 		marker := " "
 		if count := counts[date]; count > 0 {
 			marker = "•"
-			if count > 1 {
-				marker = fmt.Sprintf("• %d", count)
-			}
 		}
 		dot := widget.NewLabelWithStyle(marker, fyne.TextAlignCenter, fyne.TextStyle{})
 		dot.Importance = widget.HighImportance

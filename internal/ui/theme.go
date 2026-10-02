@@ -25,6 +25,14 @@ func (t *noteTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) color.C
 	if name == theme.ColorNamePrimary {
 		return color.NRGBA{R: 8, G: 123, B: 255, A: 255}
 	}
+	if v == theme.VariantDark {
+		switch name {
+		case theme.ColorNameDisabled, theme.ColorNamePlaceHolder:
+			return color.NRGBA{R: 148, G: 163, B: 184, A: 255}
+		case theme.ColorNameSeparator, theme.ColorNameInputBorder:
+			return color.NRGBA{R: 51, G: 65, B: 85, A: 255}
+		}
+	}
 	if v == theme.VariantLight {
 		switch name {
 		case theme.ColorNameBackground:

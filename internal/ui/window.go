@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -45,6 +46,7 @@ type Desktop struct {
 	miniGeneration         uint64
 	expiryTicker           *time.Ticker
 	stopTick               chan struct{}
+	shutdownOnce           sync.Once
 }
 
 func NewWindow(application fyne.App, b *app.Backend, version string) *Desktop {
@@ -104,7 +106,7 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 	w.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyK, Modifier: fyne.KeyModifierControl}, focus)
 	w.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyK, Modifier: fyne.KeyModifierSuper}, focus)
 	w.SetCloseIntercept(d.requestClose)
-	w.SetOnClosed(func() { d.Search.Close(); jobs.Stop(); d.expiryTicker.Stop(); close(d.stopTick) })
+	w.SetOnClosed(d.stop)
 	d.expiryTicker = time.NewTicker(time.Minute)
 	go func() {
 		for {
@@ -113,7 +115,7 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 				jobs.Post(func() {
 					d.refreshMetadata()
 					if d.current == "home" {
-						d.Home.Refresh()
+						d.Home.RefreshActiveShares()
 					}
 				})
 			case <-d.stopTick:
@@ -127,7 +129,21 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 }
 
 // Wait finishes outstanding storage work before the caller closes the backend.
-func (d *Desktop) Wait() error { d.Jobs.Wait(); return d.manager.Close() }
+func (d *Desktop) Wait() error {
+	d.stop()
+	d.Jobs.Wait()
+	return d.manager.Close()
+}
+
+// Driver quit (including an OS signal) need not call the window's OnClosed.
+func (d *Desktop) stop() {
+	d.shutdownOnce.Do(func() {
+		d.Search.Close()
+		d.Jobs.Stop()
+		d.expiryTicker.Stop()
+		close(d.stopTick)
+	})
+}
 
 type metadata struct {
 	tags   []domain.TagCount
@@ -177,5 +193,3 @@ func (d *Desktop) refreshMini() {
 		d.mini.SetMonth(month.Year(), month.Month(), days, d.selectedDate)
 	})
 }
-
-// Creates the main desktop window (recommended: Fyne v2).

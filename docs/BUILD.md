@@ -1,5 +1,27 @@
 # Build
 
+## Optional native GUI verification
+
+With the native compiler configured as below, run:
+
+```sh
+go run -tags desktopsmoke ./tests/native
+```
+
+This development-only program opens the actual Fyne window with a temporary
+SQLite profile, loads all six screens, captures Light/Dark images under
+`build/native-smoke`, then closes and removes its temporary data. It never opens
+the regular NoteHub data directory. Success prints `NATIVE_DESKTOP_SMOKE_OK`.
+Use `-output PATH` to choose another screenshot directory. The program is
+excluded from normal application builds.
+
+For software-rendered layout fixtures, set `NOTEHUB_TEST_SCREENSHOTS` to an
+absolute output directory and run `go test -run TestDesktopReferenceRendering
+./internal/ui`. Normal tests do not need to export these images.
+
+Fyne references: [native build prerequisites](https://docs.fyne.io/started/quick/)
+and [threading with fyne.Do](https://docs.fyne.io/started/goroutines/).
+
 Build NoteHub on the operating system you target. Fyne v2.7.4 uses a native
 OpenGL/window driver and requires **CGO_ENABLED=1**, a C compiler, and a
 graphical desktop for interactive use. SQLite remains `modernc.org/sqlite`.

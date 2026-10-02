@@ -40,7 +40,7 @@
 - [ ] Implement `dialogs/{attachment,confirm,share,export,import}.go`, native chooser wrapper in platform, edit conflict handling, share grants/revoke/expiry, backups with policies and report.
 - [ ] Test complete desktop behavior with Fyne headless tests and actual native compile/launch where available. Verify no SQL in UI, stale callback guards and clean shutdown.
 - [ ] Implement native Windows/macOS/Ubuntu CI and release scripts, build instructions, verification report and file manifest.
-- [ ] Run gofmt, `go mod tidy`, `go test ./...`, `go vet ./...`, `go build ./cmd/notehub`; report exact results and unavailable platform checks. Package `NoteHub_Desktop_Build.zip` with source and Windows build if successful.
+- [ ] Run gofmt, `go mod tidy`, `go test ./...`, `go vet ./...`, `go build ./cmd/notehub`; report exact results and unavailable platform checks. Deliver direct project edits. The user's later instruction cancels ZIP creation and delivery.
 
 ## Audit baseline
 

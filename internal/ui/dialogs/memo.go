@@ -52,8 +52,9 @@ func (m *Manager) EditMemo(note domain.Memo) {
 		var d *dialog.CustomDialog
 		var save, reload, cancel *widget.Button
 		busy := false
+		closed := false
 		cancel = widget.NewButton("Cancel", func() {
-			if busy {
+			if busy || closed {
 				return
 			}
 			if entry.Text == m.drafts[entry] {
@@ -67,7 +68,7 @@ func (m *Manager) EditMemo(note domain.Memo) {
 			}, m.Window)
 		})
 		save = widget.NewButtonWithIcon("Save", theme.DocumentSaveIcon(), func() {
-			if busy {
+			if busy || closed {
 				return
 			}
 			busy = true
@@ -75,10 +76,16 @@ func (m *Manager) EditMemo(note domain.Memo) {
 			reload.Disable()
 			cancel.Disable()
 			entry.Disable()
-			content, revision := entry.Text, current.Revision
+			content, revision, id := entry.Text, current.Revision, current.ID
 			work.Run(m.Jobs, func(ctx context.Context) (*domain.Memo, error) {
-				return m.Backend.Memos.Update(ctx, current.ID, revision, content)
+				return m.Backend.Memos.Update(ctx, id, revision, content)
 			}, func(updated *domain.Memo, err error) {
+				if closed {
+					if err == nil {
+						m.Changed()
+					}
+					return
+				}
 				busy = false
 				save.Enable()
 				reload.Enable()
@@ -98,11 +105,28 @@ func (m *Manager) EditMemo(note domain.Memo) {
 		})
 		save.Importance = widget.HighImportance
 		reload = widget.NewButton("Reload latest", func() {
+			if busy || closed {
+				return
+			}
 			dialog.ShowConfirm("Reload note?", "Copy any edits you want to keep before replacing this editor with the latest saved note.", func(ok bool) {
-				if !ok {
+				if !ok || busy || closed {
 					return
 				}
-				work.Run(m.Jobs, func(ctx context.Context) (*domain.Memo, error) { return m.Backend.Memos.Get(ctx, current.ID) }, func(latest *domain.Memo, err error) {
+				busy = true
+				save.Disable()
+				reload.Disable()
+				cancel.Disable()
+				entry.Disable()
+				id := current.ID
+				work.Run(m.Jobs, func(ctx context.Context) (*domain.Memo, error) { return m.Backend.Memos.Get(ctx, id) }, func(latest *domain.Memo, err error) {
+					if closed {
+						return
+					}
+					busy = false
+					save.Enable()
+					reload.Enable()
+					cancel.Enable()
+					entry.Enable()
 					if err != nil {
 						m.Error(err)
 						return
@@ -116,7 +140,7 @@ func (m *Manager) EditMemo(note domain.Memo) {
 		})
 		body := container.NewBorder(nil, container.NewVBox(status, container.NewHBox(reload, cancel, save)), nil, nil, entry)
 		d = dialog.NewCustomWithoutButtons("Edit note", body, m.Window)
-		d.SetOnClosed(func() { delete(m.drafts, entry) })
+		d.SetOnClosed(func() { closed = true; delete(m.drafts, entry) })
 		d.Resize(fyne.NewSize(720, 540))
 		d.Show()
 		m.Window.Canvas().Focus(entry)

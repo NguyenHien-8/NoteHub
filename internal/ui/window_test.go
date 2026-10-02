@@ -15,8 +15,38 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/NguyenHien-8/NoteHub/internal/app"
 	"github.com/NguyenHien-8/NoteHub/internal/repository"
+	"github.com/NguyenHien-8/NoteHub/internal/ui/dialogs"
+	"github.com/NguyenHien-8/NoteHub/internal/ui/screens"
 	"github.com/NguyenHien-8/NoteHub/internal/ui/work"
 )
+
+func TestDesktopWaitCancelsWorkWithoutWindowCloseCallback(t *testing.T) {
+	jobs := work.NewWithDispatcher(func(f func()) { f() })
+	d := &Desktop{Jobs: jobs, Search: &screens.Search{}, expiryTicker: time.NewTicker(time.Hour), stopTick: make(chan struct{}), manager: dialogs.New(nil, nil, jobs, nil)}
+	defer d.expiryTicker.Stop()
+	started := make(chan struct{})
+	work.Run(jobs, func(ctx context.Context) (struct{}, error) {
+		close(started)
+		<-ctx.Done()
+		return struct{}{}, ctx.Err()
+	}, func(struct{}, error) {})
+	<-started
+	done := make(chan error, 1)
+	go func() { done <- d.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		jobs.Stop()
+		<-done
+		t.Fatal("shutdown waits forever without canceling an open chooser's context")
+	}
+	if err := d.Wait(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func walkUI(object fyne.CanvasObject, visit func(fyne.CanvasObject), seen map[fyne.CanvasObject]bool) {
 	if object == nil || seen[object] {

@@ -26,9 +26,18 @@ func attachmentPreview(thumbnail image.Image, hasFile bool) fyne.CanvasObject {
 	}
 	bg := canvas.NewRectangle(color.NRGBA{R: 234, G: 243, B: 255, A: 255})
 	bg.CornerRadius = 10
-	image := canvas.NewImageFromResource(icon)
+	image := canvas.NewImageFromResource(theme.NewColoredResource(icon, theme.ColorNamePrimary))
 	image.FillMode = canvas.ImageFillContain
 	return container.NewGridWrap(fyne.NewSize(80, 90), container.NewStack(bg, container.New(layout.NewCustomPaddedLayout(24, 24, 20, 20), image)))
+}
+
+func pdfPreview() fyne.CanvasObject {
+	background := canvas.NewRectangle(color.NRGBA{R: 241, G: 245, B: 249, A: 255})
+	background.CornerRadius = 10
+	label := canvas.NewText("PDF", color.NRGBA{R: 220, G: 38, B: 38, A: 255})
+	label.TextStyle.Bold = true
+	label.TextSize = 20
+	return container.NewGridWrap(fyne.NewSize(80, 90), container.NewStack(background, container.NewCenter(label)))
 }
 
 func NewAttachmentCard(a domain.Attachment, thumbnail image.Image, open, reveal, remove, goMemo func()) fyne.CanvasObject {
@@ -58,5 +67,9 @@ func NewAttachmentCard(a domain.Attachment, thumbnail image.Image, open, reveal,
 		actions.Add(button)
 	}
 	content := container.New(layout.NewCustomPaddedVBoxLayout(6), name, metadata, actions)
-	return Surface(container.NewBorder(nil, nil, attachmentPreview(thumbnail, true), nil, content))
+	preview := attachmentPreview(thumbnail, true)
+	if thumbnail == nil && strings.EqualFold(a.MIMEType, "application/pdf") {
+		preview = pdfPreview()
+	}
+	return Surface(container.NewBorder(nil, nil, preview, nil, content))
 }

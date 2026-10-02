@@ -3,7 +3,6 @@ package dialogs
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -36,6 +35,9 @@ func (m *Manager) ShareMemo(note domain.Memo) {
 		work.Run(m.Jobs, func(ctx context.Context) (*domain.ShareGrant, error) {
 			return m.Backend.Shares.Create(ctx, note.ID, until)
 		}, func(grant *domain.ShareGrant, err error) {
+			if err == nil {
+				m.Changed()
+			}
 			if closed {
 				return
 			}
@@ -56,7 +58,6 @@ func (m *Manager) ShareMemo(note domain.Memo) {
 			copy := widget.NewButton("Copy", func() { m.Window.Clipboard().SetContent(value) })
 			links.Objects = []fyne.CanvasObject{widget.NewLabel(label), entry, copy}
 			links.Refresh()
-			m.Changed()
 			refresh()
 		})
 	})
@@ -86,6 +87,9 @@ func (m *Manager) ShareMemo(note domain.Memo) {
 				label.Truncation = fyne.TextTruncateEllipsis
 				revoke := widget.NewButton("Revoke", func() {
 					work.Run(m.Jobs, func(ctx context.Context) (struct{}, error) { return struct{}{}, m.Backend.Shares.Revoke(ctx, item.UID) }, func(_ struct{}, err error) {
+						if err == nil {
+							m.Changed()
+						}
 						if closed {
 							return
 						}
@@ -94,7 +98,6 @@ func (m *Manager) ShareMemo(note domain.Memo) {
 							return
 						}
 						links.RemoveAll()
-						m.Changed()
 						refresh()
 					})
 				})
@@ -109,8 +112,3 @@ func (m *Manager) ShareMemo(note domain.Memo) {
 	d.Show()
 	refresh()
 }
-
-// Human-readable import failures deliberately omit token or file payloads.
-func failureSummary(failures []string) string { return strings.Join(failures, "\n") }
-
-// Share link/token dialog.

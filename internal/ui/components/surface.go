@@ -84,6 +84,9 @@ func (t scopedTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 	return fyne.CurrentApp().Settings().Theme().Icon(name)
 }
 func (t scopedTheme) Size(name fyne.ThemeSizeName) float32 {
+	if t.compact && name == theme.SizeNamePadding {
+		return 2
+	}
 	if t.compact && name == theme.SizeNameInnerPadding {
 		return 4
 	}

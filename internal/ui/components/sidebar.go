@@ -41,6 +41,11 @@ func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *S
 		button.Alignment = widget.ButtonAlignLeading
 		button.Importance = widget.LowImportance
 		s.buttons[id] = button
+		// Keep each button in one stable theme container. Reparenting the same
+		// widget on every navigation can discard native renderer resources.
+		s.menu.Add(container.NewThemeOverride(button, scopedTheme{
+			background: color.NRGBA{R: 234, G: 243, B: 255, A: 255}, foreground: primaryBlue,
+		}))
 	}
 	add := widget.NewButtonWithIcon("", theme.ContentAddIcon(), onAddTag)
 	add.Importance = widget.LowImportance
@@ -56,15 +61,13 @@ func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *S
 
 func (s *Sidebar) SetSelected(selected string) {
 	s.selected = strings.ToLower(selected)
-	s.menu.Objects = nil
 	for _, id := range []string{"home", "calendar", "search", "attachments", "tags", "settings"} {
 		button := s.buttons[id]
 		button.Importance = widget.LowImportance
-		var object fyne.CanvasObject = button
 		if id == s.selected {
-			object = softButton(button, color.NRGBA{R: 234, G: 243, B: 255, A: 255}, primaryBlue)
+			button.Importance = widget.HighImportance
 		}
-		s.menu.Add(object)
+		button.Refresh()
 	}
 	s.menu.Refresh()
 }

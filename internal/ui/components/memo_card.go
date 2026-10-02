@@ -80,6 +80,9 @@ func NewMemoCard(m domain.Memo, thumbnail image.Image, actions MemoActions) fyne
 	open.ExtendBaseWidget(open)
 	details := container.New(layout.NewCustomPaddedVBoxLayout(5), container.NewBorder(nil, nil, nil, container.NewHBox(stamp, more), open), tags, files)
 	left := attachmentPreview(thumbnail, len(m.Attachments) > 0)
+	if thumbnail == nil && len(m.Attachments) > 0 && m.Attachments[0].MIMEType == "application/pdf" {
+		left = pdfPreview()
+	}
 	return Surface(container.NewBorder(nil, nil, left, nil, details))
 }
 

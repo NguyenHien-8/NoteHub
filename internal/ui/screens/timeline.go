@@ -48,6 +48,13 @@ func NewTimeline(env *Environment) *Timeline {
 func (s *Timeline) Dirty() bool {
 	return strings.TrimSpace(s.Composer.Entry.Text) != "" || len(s.Composer.Paths()) > 0 || s.saving
 }
+
+// Expiration changes must not reset ordinary timeline pagination or scroll.
+func (s *Timeline) RefreshActiveShares() {
+	if s.filter.SharedOnly {
+		s.Refresh()
+	}
+}
 func (s *Timeline) Filter(q repository.TimelineQuery, date string) {
 	s.filter = q
 	s.date = date
