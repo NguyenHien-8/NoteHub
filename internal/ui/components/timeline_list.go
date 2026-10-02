@@ -32,7 +32,7 @@ type timelineCard struct {
 }
 
 func NewTimelineList() *TimelineList {
-	t := &TimelineList{rows: container.New(layout.NewCustomPaddedVBoxLayout(12)), cards: make(map[int64]timelineCard), headers: make(map[string]fyne.CanvasObject)}
+	t := &TimelineList{rows: container.New(layout.NewCustomPaddedVBoxLayout(10)), cards: make(map[int64]timelineCard), headers: make(map[string]fyne.CanvasObject)}
 	t.Scroll = container.NewVScroll(t.rows)
 	t.more = widget.NewButtonWithIcon("Load more", theme.NavigateNextIcon(), t.requestMore)
 	t.more.Hide()
@@ -91,7 +91,7 @@ func (t *TimelineList) SetMemos(memos []domain.Memo, thumbs map[int64]image.Imag
 				snapshot := memo
 				snapshot.Tags = append([]string(nil), memo.Tags...)
 				snapshot.Attachments = append([]domain.Attachment(nil), memo.Attachments...)
-				card = timelineCard{memo: snapshot, object: NewMemoCard(memo, thumbs[memo.ID], actions)}
+				card = timelineCard{memo: snapshot, object: NewMemoCard(memo, thumbs, actions)}
 			}
 			cards[memo.ID] = card
 			objects = append(objects, card.object)
@@ -112,7 +112,6 @@ func (t *TimelineList) SetMemos(memos []domain.Memo, thumbs map[int64]image.Imag
 	}
 	t.rows.Objects = objects
 	t.rows.Refresh()
-	t.Scroll.Refresh()
 }
 
 func (t *TimelineList) SetMore(available bool, load func()) {

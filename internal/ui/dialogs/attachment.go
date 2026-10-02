@@ -58,4 +58,19 @@ func (m *Manager) AttachToMemo(id int64, done func()) {
 	})
 }
 
+func (m *Manager) ReorderAttachments(note domain.Memo, orderedIDs []int64) {
+	ids := append([]int64(nil), orderedIDs...)
+	work.Run(m.Jobs, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, m.Backend.Attachments.Reorder(ctx, note.ID, ids)
+	}, func(_ struct{}, err error) {
+		if err != nil {
+			m.Error(err)
+			return
+		}
+		if m.Changed != nil {
+			m.Changed()
+		}
+	})
+}
+
 // Attachment selection/details dialog.

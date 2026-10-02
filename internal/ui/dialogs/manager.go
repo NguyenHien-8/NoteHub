@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"strconv"
 	"sync"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/NguyenHien-8/NoteHub/internal/app"
+	"github.com/NguyenHien-8/NoteHub/internal/domain"
 	"github.com/NguyenHien-8/NoteHub/internal/share"
 	"github.com/NguyenHien-8/NoteHub/internal/ui/work"
 )
@@ -25,10 +27,15 @@ type Manager struct {
 	serverMu   sync.Mutex
 	server     *share.Server
 	backupBusy bool
+	preview    func(context.Context, domain.Attachment) image.Image
 }
 
 func New(b *app.Backend, w fyne.Window, j *work.Runner, changed func()) *Manager {
 	return &Manager{Backend: b, Window: w, Jobs: j, Changed: changed, drafts: make(map[*widget.Entry]string)}
+}
+
+func (m *Manager) SetPreviewLoader(loader func(context.Context, domain.Attachment) image.Image) {
+	m.preview = loader
 }
 func (m *Manager) Error(err error) {
 	if err != nil && !errors.Is(err, context.Canceled) {

@@ -1,10 +1,11 @@
 package ui
 
 import (
+	"strings"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"github.com/NguyenHien-8/NoteHub/internal/repository"
-	"strings"
 )
 
 func (d *Desktop) Navigate(page string) {
@@ -32,13 +33,23 @@ func (d *Desktop) Navigate(page string) {
 	}
 	d.current = page
 	d.sidebar.SetSelected(page)
+	d.setCenterObject(object)
+}
+
+func (d *Desktop) setCenterObject(object fyne.CanvasObject) {
+	if len(d.center.Objects) == 1 && d.center.Objects[0] == object {
+		return
+	}
 	d.center.Objects = []fyne.CanvasObject{object}
 	d.center.Refresh()
 }
 
 func (d *Desktop) Refresh() {
-	d.Home.Refresh()
+	// Refresh only the visible screen. Hidden screens reload when navigated to,
+	// avoiding duplicate database work and unnecessary full-window redraws.
 	switch d.current {
+	case "home":
+		d.Home.Refresh()
 	case "calendar":
 		d.Calendar.Refresh()
 	case "search":
@@ -54,8 +65,7 @@ func (d *Desktop) showFilter(q repository.TimelineQuery) {
 	d.Home.Filter(q, "")
 	d.current = "home"
 	d.sidebar.SetSelected("home")
-	d.center.Objects = []fyne.CanvasObject{d.Home.Object}
-	d.center.Refresh()
+	d.setCenterObject(d.Home.Object)
 	d.refreshMini()
 }
 func (d *Desktop) showTag(tag string) { d.showFilter(repository.TimelineQuery{Tags: []string{tag}}) }
@@ -64,8 +74,7 @@ func (d *Desktop) showDate(date string) {
 	d.Home.Filter(repository.TimelineQuery{}, date)
 	d.current = "home"
 	d.sidebar.SetSelected("home")
-	d.center.Objects = []fyne.CanvasObject{d.Home.Object}
-	d.center.Refresh()
+	d.setCenterObject(d.Home.Object)
 	d.refreshMini()
 }
 

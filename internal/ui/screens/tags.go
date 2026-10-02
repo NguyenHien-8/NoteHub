@@ -1,6 +1,8 @@
 package screens
 
 import (
+	"reflect"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -12,6 +14,8 @@ type Tags struct {
 	Object  fyne.CanvasObject
 	content *fyne.Container
 	onTag   func(string)
+	tags    []domain.TagCount
+	loaded  bool
 }
 
 func NewTags(onTag func(string)) *Tags {
@@ -20,6 +24,11 @@ func NewTags(onTag func(string)) *Tags {
 	return s
 }
 func (s *Tags) Set(tags []domain.TagCount) {
+	if s.loaded && reflect.DeepEqual(s.tags, tags) {
+		return
+	}
+	s.loaded = true
+	s.tags = append([]domain.TagCount(nil), tags...)
 	s.content.Objects = []fyne.CanvasObject{components.NewTagList(tags, s.onTag)}
 	s.content.Refresh()
 }

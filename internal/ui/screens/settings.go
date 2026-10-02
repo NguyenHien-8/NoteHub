@@ -14,12 +14,42 @@ import (
 	"github.com/NguyenHien-8/NoteHub/internal/ui/work"
 )
 
-func NewSettings(env *Environment, application fyne.App, manager *dialogs.Manager, version string, setAppearance func(string)) fyne.CanvasObject {
+func NewSettings(env *Environment, application fyne.App, manager *dialogs.Manager, version string, setAppearance func(string), setTypography func(string, float64)) fyne.CanvasObject {
 	section := func(title string, objects ...fyne.CanvasObject) fyne.CanvasObject {
 		return components.Surface(container.NewVBox(append([]fyne.CanvasObject{widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})}, objects...)...))
 	}
-	appearance := widget.NewSelect([]string{"System", "Light", "Dark"}, func(mode string) { application.Preferences().SetString("appearance", mode); setAppearance(mode) })
+	appearance := widget.NewSelect([]string{"System", "Light", "Dark"}, func(mode string) {
+		if setAppearance != nil {
+			setAppearance(mode)
+		}
+	})
 	appearance.SetSelected(application.Preferences().StringWithFallback("appearance", "Light"))
+	font := widget.NewSelect([]string{"System", "Monospace"}, nil)
+	font.SetSelected(application.Preferences().StringWithFallback("font-family", "System"))
+	sizes := []string{"12", "13", "14", "15", "16", "17", "18"}
+	textSize := widget.NewSelect(sizes, nil)
+	currentSize := int(application.Preferences().FloatWithFallback("font-size", 14))
+	if currentSize < 12 || currentSize > 18 {
+		currentSize = 14
+	}
+	textSize.SetSelected(strconv.Itoa(currentSize))
+	applyTypography := func() {
+		if setTypography == nil {
+			return
+		}
+		size, err := strconv.ParseFloat(textSize.Selected, 64)
+		if err != nil {
+			return
+		}
+		setTypography(font.Selected, size)
+	}
+	font.OnChanged = func(string) { applyTypography() }
+	textSize.OnChanged = func(string) { applyTypography() }
+	typography := widget.NewForm(
+		widget.NewFormItem("Theme", appearance),
+		widget.NewFormItem("Font", font),
+		widget.NewFormItem("Text size", textSize),
+	)
 	dataPath := widget.NewLabel(env.Backend.Paths.Root)
 	dataPath.Wrapping = fyne.TextWrapBreak
 	open := widget.NewButton("Open data folder", func() {
@@ -61,7 +91,7 @@ func NewSettings(env *Environment, application fyne.App, manager *dialogs.Manage
 	})
 	content := container.NewVBox(
 		widget.NewLabelWithStyle("Settings", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		section("Appearance", appearance), section("Data", dataPath, open),
+		section("Appearance & typography", typography), section("Data", dataPath, open),
 		section("Backup", widget.NewLabel("Save a portable ZIP with your notes, favorites and attachments."), container.NewHBox(widget.NewButton("Export Backup", manager.Export), widget.NewButton("Import Backup", manager.Import))),
 		section("Sharing", widget.NewForm(widget.NewFormItem("Port", port)), toggle, info),
 		section("About", widget.NewLabel("NoteHub "+version), widget.NewLabel("A quiet place for your notes. Stored locally on your computer.")),

@@ -3,6 +3,7 @@ package components
 import (
 	"fmt"
 	"image/color"
+	"reflect"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -20,6 +21,7 @@ type Sidebar struct {
 	buttons  map[string]*widget.Button
 	onTag    func(string)
 	selected string
+	tagData  []domain.TagCount
 }
 
 func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *Sidebar {
@@ -60,19 +62,27 @@ func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *S
 }
 
 func (s *Sidebar) SetSelected(selected string) {
-	s.selected = strings.ToLower(selected)
-	for _, id := range []string{"home", "calendar", "search", "attachments", "tags", "settings"} {
-		button := s.buttons[id]
+	selected = strings.ToLower(selected)
+	if selected == s.selected {
+		return
+	}
+	previous := s.selected
+	s.selected = selected
+	if button := s.buttons[previous]; button != nil {
 		button.Importance = widget.LowImportance
-		if id == s.selected {
-			button.Importance = widget.HighImportance
-		}
 		button.Refresh()
 	}
-	s.menu.Refresh()
+	if button := s.buttons[selected]; button != nil {
+		button.Importance = widget.HighImportance
+		button.Refresh()
+	}
 }
 
 func (s *Sidebar) SetTags(tags []domain.TagCount) {
+	if reflect.DeepEqual(s.tagData, tags) {
+		return
+	}
+	s.tagData = append([]domain.TagCount(nil), tags...)
 	s.tags.Content = sidebarTags(tags, s.onTag)
 	s.tags.Refresh()
 }

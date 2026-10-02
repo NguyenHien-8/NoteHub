@@ -3,6 +3,7 @@ package components
 import (
 	"fmt"
 	"image/color"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -20,6 +21,10 @@ type Calendar struct {
 	grid       *fyne.Container
 	onDay      func(string)
 	dayButtons map[int]*widget.Button
+	year       int
+	month      time.Month
+	days       []domain.CalendarDay
+	selected   string
 }
 
 func NewCalendar(onDay func(string), onMonth func(int)) *Calendar {
@@ -49,6 +54,11 @@ func NewCalendar(onDay func(string), onMonth func(int)) *Calendar {
 }
 
 func (c *Calendar) SetMonth(year int, month time.Month, days []domain.CalendarDay, selected string) {
+	if c.year == year && c.month == month && c.selected == selected && reflect.DeepEqual(c.days, days) {
+		return
+	}
+	c.year, c.month, c.selected = year, month, selected
+	c.days = append([]domain.CalendarDay(nil), days...)
 	c.label.SetText(time.Date(year, month, 1, 12, 0, 0, 0, time.Local).Format("January 2006"))
 	counts := make(map[string]int, len(days))
 	for _, day := range days {

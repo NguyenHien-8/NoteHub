@@ -15,7 +15,7 @@ var primaryBlue = color.NRGBA{R: 8, G: 123, B: 255, A: 255}
 
 // Surface wraps content in a rounded card and follows the current theme.
 func Surface(content fyne.CanvasObject) fyne.CanvasObject {
-	s := &surface{content: container.New(layout.NewCustomPaddedLayout(12, 12, 12, 12), content)}
+	s := &surface{content: container.New(layout.NewCustomPaddedLayout(10, 10, 10, 10), content)}
 	s.ExtendBaseWidget(s)
 	return s
 }
@@ -27,7 +27,7 @@ type surface struct {
 
 func (s *surface) CreateRenderer() fyne.WidgetRenderer {
 	bg := canvas.NewRectangle(color.White)
-	bg.CornerRadius, bg.StrokeWidth = 12, 1
+	bg.CornerRadius, bg.StrokeWidth = 10, 1
 	r := &surfaceRenderer{owner: s, bg: bg, objects: []fyne.CanvasObject{bg, s.content}}
 	r.Refresh()
 	return r
