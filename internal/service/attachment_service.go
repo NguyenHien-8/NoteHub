@@ -83,6 +83,10 @@ func (s *AttachmentService) List(ctx context.Context, memoID int64) ([]domain.At
 	return m[memoID], nil
 }
 
+func (s *AttachmentService) ListAll(ctx context.Context, limit, offset int) ([]domain.Attachment, error) {
+	return s.attachments.ListAllAttachments(ctx, limit, offset)
+}
+
 func (s *AttachmentService) Open(ctx context.Context, attachmentID int64) (*os.File, *domain.Attachment, error) {
 	a, err := s.attachments.GetAttachmentByID(ctx, attachmentID)
 	if err != nil {

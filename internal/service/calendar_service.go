@@ -43,14 +43,19 @@ func (s *CalendarService) Month(ctx context.Context, year int, month time.Month,
 }
 
 func (s *CalendarService) MemosForDate(ctx context.Context, date string, loc *time.Location, limit int) ([]domain.Memo, error) {
+	items, _, err := s.PageForDate(ctx, date, loc, limit, nil)
+	return items, err
+}
+
+// PageForDate applies local calendar boundaries while retaining keyset paging.
+func (s *CalendarService) PageForDate(ctx context.Context, date string, loc *time.Location, limit int, cursor *repository.TimelineCursor) ([]domain.Memo, *repository.TimelineCursor, error) {
 	if loc == nil {
 		loc = time.Local
 	}
 	start, err := time.ParseInLocation("2006-01-02", date, loc)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid date %q", domain.ErrInvalid, date)
+		return nil, nil, fmt.Errorf("%w: invalid date %q", domain.ErrInvalid, date)
 	}
 	end := start.AddDate(0, 0, 1)
-	items, _, err := s.timeline.List(ctx, repository.TimelineQuery{From: &start, To: &end, Limit: limit})
-	return items, err
+	return s.timeline.List(ctx, repository.TimelineQuery{From: &start, To: &end, Limit: limit, Cursor: cursor})
 }

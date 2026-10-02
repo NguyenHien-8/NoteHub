@@ -26,7 +26,13 @@ func Open(ctx context.Context, dbPath string) (*Store, error) {
 		return nil, err
 	}
 
-	u := &url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}
+	uriPath := filepath.ToSlash(abs)
+	// A drive letter without a leading slash becomes the URI authority
+	// (file://C:/...), which SQLite cannot open. Use file:///C:/... instead.
+	if volume := filepath.VolumeName(abs); len(volume) == 2 && volume[1] == ':' {
+		uriPath = "/" + uriPath
+	}
+	u := &url.URL{Scheme: "file", Path: uriPath}
 	q := u.Query()
 	// Adopt the SQLite lessons that matter for a desktop Memos-like app:
 	// WAL for read/write concurrency, a busy handler instead of immediate BUSY

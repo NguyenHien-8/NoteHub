@@ -33,6 +33,7 @@ type MemoRecord struct {
 	CreateTime  string             `json:"createTime"`
 	UpdateTime  string             `json:"updateTime"`
 	ContentPath string             `json:"contentPath"`
+	Favorite    bool               `json:"favorite,omitempty"`
 	Attachments []AttachmentRecord `json:"attachments,omitempty"`
 }
 

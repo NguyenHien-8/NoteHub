@@ -11,6 +11,14 @@ type Memo struct {
 	CreatedAt   time.Time    `json:"createdAt"`
 	UpdatedAt   time.Time    `json:"updatedAt"`
 	Revision    int64        `json:"revision"`
+	Favorite    bool         `json:"favorite,omitempty"`
 	Tags        []string     `json:"tags,omitempty"`
 	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// MemoCounts summarizes the quick filters without loading memo content.
+type MemoCounts struct {
+	All       int
+	Favorites int
+	Shared    int
 }

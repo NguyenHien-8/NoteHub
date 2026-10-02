@@ -118,7 +118,7 @@ func (s *BackupService) Export(ctx context.Context, out io.Writer) error {
 		}
 	}()
 	for _, memo := range memos {
-		rec := backup.MemoRecord{UID: memo.UID, CreateTime: backup.FormatTime(memo.CreatedAt), UpdateTime: backup.FormatTime(memo.UpdatedAt), ContentPath: backup.ContentPath(memo.UID)}
+		rec := backup.MemoRecord{UID: memo.UID, CreateTime: backup.FormatTime(memo.CreatedAt), UpdateTime: backup.FormatTime(memo.UpdatedAt), ContentPath: backup.ContentPath(memo.UID), Favorite: memo.Favorite}
 		for _, a := range memo.Attachments {
 			f, err := s.files.Open(a.RelativePath)
 			if err != nil {
@@ -218,7 +218,7 @@ func (s *BackupService) importOne(ctx context.Context, archive *backup.Archive, 
 			mode = "duplicate"
 		}
 	}
-	memo := &domain.Memo{UID: targetUID, Content: content, CreatedAt: created, UpdatedAt: updated, Revision: 1}
+	memo := &domain.Memo{UID: targetUID, Content: content, CreatedAt: created, UpdatedAt: updated, Revision: 1, Favorite: rec.Favorite}
 	tags := tagparse.Extract(content)
 	newAttachments := make([]domain.Attachment, 0, len(rec.Attachments))
 	cleanup := func() {

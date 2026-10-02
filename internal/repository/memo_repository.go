@@ -13,11 +13,13 @@ type TimelineCursor struct {
 }
 
 type TimelineQuery struct {
-	From   *time.Time
-	To     *time.Time // exclusive
-	Tags   []string
-	Limit  int
-	Cursor *TimelineCursor
+	From         *time.Time
+	To           *time.Time // exclusive
+	Tags         []string
+	Limit        int
+	Cursor       *TimelineCursor
+	FavoriteOnly bool
+	SharedOnly   bool
 }
 
 type SearchQuery struct {
@@ -40,6 +42,8 @@ type MemoRepository interface {
 	UpdateMemo(ctx context.Context, id, expectedRevision int64, content string, updatedAt time.Time, tags []string) (*domain.Memo, error)
 	ReplaceImportedMemo(ctx context.Context, id int64, memo *domain.Memo, tags []string, attachments []domain.Attachment) ([]domain.Attachment, error)
 	DeleteMemo(ctx context.Context, id int64) error
+	SetMemoFavorite(ctx context.Context, id int64, favorite bool, updatedAt time.Time) error
+	CountMemos(ctx context.Context, now time.Time) (domain.MemoCounts, error)
 	ListTimeline(ctx context.Context, q TimelineQuery) ([]domain.Memo, *TimelineCursor, error)
 	SearchMemos(ctx context.Context, q SearchQuery) ([]domain.Memo, error)
 	ListAllMemos(ctx context.Context) ([]domain.Memo, error)

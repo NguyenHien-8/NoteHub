@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 
 	"github.com/NguyenHien-8/NoteHub/internal/platform"
 	"github.com/NguyenHien-8/NoteHub/internal/repository/sqlite"
@@ -10,6 +12,7 @@ import (
 )
 
 type Config struct {
+	DataDir            string
 	AppName            string
 	Version            string
 	MaxMemoBytes       int
@@ -17,7 +20,18 @@ type Config struct {
 }
 
 func OpenBackend(ctx context.Context, cfg Config) (*Backend, error) {
-	paths, err := platform.ResolveDataPaths(cfg.AppName)
+	var paths platform.DataPaths
+	var err error
+	if cfg.DataDir == "" {
+		paths, err = platform.ResolveDataPaths(cfg.AppName)
+	} else {
+		var root string
+		root, err = filepath.Abs(cfg.DataDir)
+		if err == nil {
+			paths = platform.DataPaths{Root: root, Database: filepath.Join(root,"notehub.db"), Attachments: filepath.Join(root,"attachments")}
+			err = os.MkdirAll(paths.Attachments,0o755)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

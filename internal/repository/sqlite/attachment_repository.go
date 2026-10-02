@@ -123,3 +123,25 @@ func (s *Store) ListAllAttachmentPaths(ctx context.Context) ([]string, error) {
 	}
 	return out, rows.Err()
 }
+
+func (s *Store) ListAllAttachments(ctx context.Context, limit, offset int) ([]domain.Attachment, error) {
+	limit = clampLimit(limit, 50, 200)
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,uid,memo_id,created_ts,filename,mime_type,size,sha256,relative_path
+		FROM attachment ORDER BY created_ts DESC,id DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Attachment
+	for rows.Next() {
+		a, err := scanAttachment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *a)
+	}
+	return out, rows.Err()
+}

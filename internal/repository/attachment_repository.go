@@ -13,4 +13,5 @@ type AttachmentRepository interface {
 	ListAttachmentsByMemoIDs(ctx context.Context, memoIDs []int64) (map[int64][]domain.Attachment, error)
 	DeleteAttachment(ctx context.Context, id int64) error
 	ListAllAttachmentPaths(ctx context.Context) ([]string, error)
+	ListAllAttachments(ctx context.Context, limit, offset int) ([]domain.Attachment, error)
 }

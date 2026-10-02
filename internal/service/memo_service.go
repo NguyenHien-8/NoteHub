@@ -96,3 +96,8 @@ func (s *MemoService) Delete(ctx context.Context, id int64) error {
 	}
 	return nil
 }
+
+// SetFavorite invalidates stale editors when the favorite state changes.
+func (s *MemoService) SetFavorite(ctx context.Context, id int64, favorite bool) error {
+	return s.memos.SetMemoFavorite(ctx, id, favorite, time.Now().UTC().Truncate(time.Second))
+}

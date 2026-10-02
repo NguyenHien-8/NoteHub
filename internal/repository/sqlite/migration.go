@@ -13,6 +13,10 @@ type migration struct {
 
 var migrations = []migration{
 	{version: 1, name: "initial desktop backend", sql: schemaV1},
+	{version: 2, name: "memo favorites", sql: `
+		ALTER TABLE memo ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0,1));
+		CREATE INDEX idx_memo_favorites ON memo(created_ts DESC,id DESC) WHERE favorite=1;
+	`},
 }
 
 func (s *Store) Migrate(ctx context.Context) error {
@@ -24,16 +28,20 @@ func (s *Store) Migrate(ctx context.Context) error {
 		return err
 	}
 	for _, m := range migrations {
-		var exists int
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migration WHERE version=?`, m.version).Scan(&exists); err != nil {
-			return err
-		}
-		if exists != 0 {
-			continue
-		}
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
+		}
+		// Check under the IMMEDIATE transaction's writer lock. Concurrent
+		// openers must see the committed version before attempting ALTER TABLE.
+		var exists int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migration WHERE version=?`, m.version).Scan(&exists); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if exists != 0 {
+			_ = tx.Rollback()
+			continue
 		}
 		if _, err := tx.ExecContext(ctx, m.sql); err != nil {
 			_ = tx.Rollback()

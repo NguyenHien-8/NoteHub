@@ -18,7 +18,7 @@ func fromUnix(v int64) time.Time { return time.Unix(v, 0).UTC() }
 func scanMemo(scanner interface{ Scan(...any) error }) (*domain.Memo, error) {
 	var m domain.Memo
 	var created, updated int64
-	if err := scanner.Scan(&m.ID, &m.UID, &m.Content, &created, &updated, &m.Revision); err != nil {
+	if err := scanner.Scan(&m.ID, &m.UID, &m.Content, &created, &updated, &m.Revision, &m.Favorite); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
@@ -35,8 +35,8 @@ func (s *Store) CreateMemo(ctx context.Context, memo *domain.Memo, tags []string
 		return err
 	}
 	defer tx.Rollback()
-	res, err := tx.ExecContext(ctx, `INSERT INTO memo(uid,content,created_ts,updated_ts,revision) VALUES(?,?,?,?,?)`,
-		memo.UID, memo.Content, unix(memo.CreatedAt), unix(memo.UpdatedAt), max64(memo.Revision, 1))
+	res, err := tx.ExecContext(ctx, `INSERT INTO memo(uid,content,created_ts,updated_ts,revision,favorite) VALUES(?,?,?,?,?,?)`,
+		memo.UID, memo.Content, unix(memo.CreatedAt), unix(memo.UpdatedAt), max64(memo.Revision, 1), memo.Favorite)
 	if err != nil {
 		return err
 	}
@@ -57,8 +57,8 @@ func (s *Store) CreateImportedMemo(ctx context.Context, memo *domain.Memo, tags 
 		return err
 	}
 	defer tx.Rollback()
-	res, err := tx.ExecContext(ctx, `INSERT INTO memo(uid,content,created_ts,updated_ts,revision) VALUES(?,?,?,?,?)`,
-		memo.UID, memo.Content, unix(memo.CreatedAt), unix(memo.UpdatedAt), max64(memo.Revision, 1))
+	res, err := tx.ExecContext(ctx, `INSERT INTO memo(uid,content,created_ts,updated_ts,revision,favorite) VALUES(?,?,?,?,?,?)`,
+		memo.UID, memo.Content, unix(memo.CreatedAt), unix(memo.UpdatedAt), max64(memo.Revision, 1), memo.Favorite)
 	if err != nil {
 		return err
 	}
@@ -80,11 +80,11 @@ func (s *Store) CreateImportedMemo(ctx context.Context, memo *domain.Memo, tags 
 }
 
 func (s *Store) GetMemoByID(ctx context.Context, id int64) (*domain.Memo, error) {
-	return scanMemo(s.db.QueryRowContext(ctx, `SELECT id,uid,content,created_ts,updated_ts,revision FROM memo WHERE id=?`, id))
+	return scanMemo(s.db.QueryRowContext(ctx, `SELECT id,uid,content,created_ts,updated_ts,revision,favorite FROM memo WHERE id=?`, id))
 }
 
 func (s *Store) GetMemoByUID(ctx context.Context, uid string) (*domain.Memo, error) {
-	return scanMemo(s.db.QueryRowContext(ctx, `SELECT id,uid,content,created_ts,updated_ts,revision FROM memo WHERE uid=?`, uid))
+	return scanMemo(s.db.QueryRowContext(ctx, `SELECT id,uid,content,created_ts,updated_ts,revision,favorite FROM memo WHERE uid=?`, uid))
 }
 
 func (s *Store) UpdateMemo(ctx context.Context, id, expectedRevision int64, content string, updatedAt time.Time, tags []string) (*domain.Memo, error) {
@@ -117,7 +117,7 @@ func (s *Store) UpdateMemo(ctx context.Context, id, expectedRevision int64, cont
 	if err := replaceTagsTx(ctx, tx, id, tags); err != nil {
 		return nil, err
 	}
-	m, err := scanMemo(tx.QueryRowContext(ctx, `SELECT id,uid,content,created_ts,updated_ts,revision FROM memo WHERE id=?`, id))
+	m, err := scanMemo(tx.QueryRowContext(ctx, `SELECT id,uid,content,created_ts,updated_ts,revision,favorite FROM memo WHERE id=?`, id))
 	if err != nil {
 		return nil, err
 	}
@@ -150,8 +150,8 @@ func (s *Store) ReplaceImportedMemo(ctx context.Context, id int64, memo *domain.
 	}
 	oldList := old[id]
 
-	if _, err := tx.ExecContext(ctx, `UPDATE memo SET content=?,created_ts=?,updated_ts=?,revision=revision+1 WHERE id=?`,
-		memo.Content, unix(memo.CreatedAt), unix(memo.UpdatedAt), id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE memo SET content=?,created_ts=?,updated_ts=?,favorite=?,revision=revision+1 WHERE id=?`,
+		memo.Content, unix(memo.CreatedAt), unix(memo.UpdatedAt), memo.Favorite, id); err != nil {
 		return nil, err
 	}
 	if err := replaceTagsTx(ctx, tx, id, tags); err != nil {
@@ -193,13 +193,20 @@ func (s *Store) ListTimeline(ctx context.Context, q repository.TimelineQuery) ([
 	args := []any{}
 	appendTimeRange(&where, &args, q.From, q.To)
 	appendTagFilters(&where, &args, q.Tags)
+	if q.FavoriteOnly {
+		where = append(where, `m.favorite=1`)
+	}
+	if q.SharedOnly {
+		where = append(where, activeSharePredicate)
+		args = append(args, unix(time.Now()))
+	}
 	if q.Cursor != nil {
 		where = append(where, `(m.created_ts < ? OR (m.created_ts = ? AND m.id < ?))`)
 		ts := unix(q.Cursor.CreatedAt)
 		args = append(args, ts, ts, q.Cursor.ID)
 	}
 	args = append(args, limit+1)
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.uid,m.content,m.created_ts,m.updated_ts,m.revision
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.uid,m.content,m.created_ts,m.updated_ts,m.revision,m.favorite
 		FROM memo m WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY m.created_ts DESC,m.id DESC LIMIT ?`, args...)
 	if err != nil {
@@ -238,7 +245,7 @@ func (s *Store) SearchMemos(ctx context.Context, q repository.SearchQuery) ([]do
 		order = `ORDER BY bm25(memo_fts),m.created_ts DESC,m.id DESC`
 	}
 	args = append(args, limit, q.Offset)
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.uid,m.content,m.created_ts,m.updated_ts,m.revision `+from+`
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.uid,m.content,m.created_ts,m.updated_ts,m.revision,m.favorite `+from+`
 		WHERE `+strings.Join(where, " AND ")+` `+order+` LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		return nil, err
@@ -248,7 +255,7 @@ func (s *Store) SearchMemos(ctx context.Context, q repository.SearchQuery) ([]do
 }
 
 func (s *Store) ListAllMemos(ctx context.Context) ([]domain.Memo, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,uid,content,created_ts,updated_ts,revision FROM memo ORDER BY created_ts ASC,id ASC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,uid,content,created_ts,updated_ts,revision,favorite FROM memo ORDER BY created_ts ASC,id ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -271,6 +278,34 @@ func (s *Store) CreatedBetween(ctx context.Context, from, to time.Time) ([]time.
 		out = append(out, fromUnix(ts))
 	}
 	return out, rows.Err()
+}
+
+const activeSharePredicate = `EXISTS(SELECT 1 FROM memo_share ms WHERE ms.memo_id=m.id AND (ms.expires_ts IS NULL OR ms.expires_ts>?))`
+
+// CountMemos counts distinct memos; multiple active grants count once.
+func (s *Store) CountMemos(ctx context.Context, now time.Time) (domain.MemoCounts, error) {
+	var counts domain.MemoCounts
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(m.favorite),0),
+		COALESCE(SUM(CASE WHEN `+activeSharePredicate+` THEN 1 ELSE 0 END),0) FROM memo m`, unix(now)).Scan(&counts.All, &counts.Favorites, &counts.Shared)
+	return counts, err
+}
+
+func (s *Store) SetMemoFavorite(ctx context.Context, id int64, favorite bool, updatedAt time.Time) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE memo SET
+		revision=revision+CASE WHEN favorite<>? THEN 1 ELSE 0 END,
+		updated_ts=CASE WHEN favorite<>? THEN ? ELSE updated_ts END,
+		favorite=? WHERE id=?`, favorite, favorite, unix(updatedAt), favorite, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 func scanMemoRows(rows *sql.Rows) ([]domain.Memo, error) {
