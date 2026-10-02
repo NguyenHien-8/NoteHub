@@ -1,0 +1,1 @@
+# CI: gofmt, go vet, go test on Windows/macOS/Linux.
