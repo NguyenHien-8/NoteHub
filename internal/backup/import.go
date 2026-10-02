@@ -1,3 +1,4 @@
 package backup
 
-// Import restores a NoteHub backup archive.
+// Import application logic intentionally lives in service/backup_service.go.
+// This package owns only the validated archive format and ZIP safety boundary.

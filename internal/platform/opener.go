@@ -1,3 +1,5 @@
 package platform
 
-// Cross-platform open file/folder/link API.
+import "errors"
+
+var ErrOpenUnsupported = errors.New("opening external resources is unsupported on this platform")

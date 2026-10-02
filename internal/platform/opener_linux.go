@@ -2,4 +2,6 @@
 
 package platform
 
-// Linux implementation for opening files/folders/URLs.
+import "os/exec"
+
+func OpenExternal(target string) error { return exec.Command("xdg-open", target).Start() }
