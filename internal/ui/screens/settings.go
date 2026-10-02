@@ -7,7 +7,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/NguyenHien-8/NoteHub/internal/platform"
 	"github.com/NguyenHien-8/NoteHub/internal/ui/components"
@@ -20,19 +19,13 @@ func NewSettings(env *Environment, application fyne.App, manager *dialogs.Manage
 	section := func(title string, objects ...fyne.CanvasObject) fyne.CanvasObject {
 		return components.Surface(container.NewVBox(append([]fyne.CanvasObject{widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})}, objects...)...))
 	}
-	fixedWidth := func(width float32, object fyne.CanvasObject) fyne.CanvasObject {
-		height := max(float32(40), object.MinSize().Height)
-		return container.NewGridWrap(fyne.NewSize(width, height), object)
+	settingLabel := func(text string) *widget.Label {
+		label := widget.NewLabel(text)
+		label.Importance = widget.LowImportance
+		return label
 	}
-	settingRow := func(label string, object fyne.CanvasObject) fyne.CanvasObject {
-		name := widget.NewLabel(label)
-		name.Importance = widget.LowImportance
-		// Border keeps the label pinned to the left edge and the field pinned to
-		// the right edge without relying on a Form's label sizing heuristics.
-		return container.NewBorder(nil, nil, name, object, layout.NewSpacer())
-	}
-	control := func(width float32, object fyne.CanvasObject) fyne.CanvasObject {
-		return fixedWidth(width, components.ControlSurface(object))
+	control := func(object fyne.CanvasObject) fyne.CanvasObject {
+		return components.ControlSurface(object)
 	}
 
 	appearance := widget.NewSelect([]string{"System", "Light", "Dark"}, nil)
@@ -89,12 +82,16 @@ func NewSettings(env *Environment, application fyne.App, manager *dialogs.Manage
 		}
 	}
 
-	const fieldWidth float32 = 320
 	textSizeField := container.NewBorder(nil, nil, nil, widget.NewLabel("px"), textSize)
-	typographySettings := container.NewVBox(
-		settingRow("Theme", control(fieldWidth, appearance)),
-		settingRow("Font", control(fieldWidth, font)),
-		settingRow("Text size", control(fieldWidth, textSizeField)),
+	typographySettings := container.New(compactSettingsGridLayout{
+		ControlWidth: 220,
+		ColumnGap:    16,
+		RowGap:       8,
+		MinRowHeight: 40,
+	},
+		settingLabel("Theme"), control(appearance),
+		settingLabel("Font"), control(font),
+		settingLabel("Text size"), control(textSizeField),
 	)
 
 	dataPath := widget.NewLabel(env.Backend.Paths.Root)
@@ -157,6 +154,69 @@ func containsString(values []string, wanted string) bool {
 
 func formatTextSize(size float32) string {
 	return strconv.FormatFloat(float64(size), 'f', -1, 32)
+}
+
+// compactSettingsGridLayout keeps settings labels and fields visually grouped
+// instead of pushing fields to the far edge of a wide settings card. Objects
+// are supplied as label/control pairs. Labels share the widest natural label
+// width, controls share one compact preferred width, and only the controls
+// shrink when the available window width becomes constrained.
+type compactSettingsGridLayout struct {
+	ControlWidth float32
+	ColumnGap    float32
+	RowGap       float32
+	MinRowHeight float32
+}
+
+func (l compactSettingsGridLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	labelWidth := l.labelWidth(objects)
+	controlWidth := l.ControlWidth
+	available := size.Width - labelWidth - l.ColumnGap
+	if controlWidth > available {
+		controlWidth = max(float32(0), available)
+	}
+
+	y := float32(0)
+	for i := 0; i+1 < len(objects); i += 2 {
+		label, field := objects[i], objects[i+1]
+		if !label.Visible() || !field.Visible() {
+			continue
+		}
+		rowHeight := max(l.MinRowHeight, label.MinSize().Height, field.MinSize().Height)
+		label.Move(fyne.NewPos(0, y))
+		label.Resize(fyne.NewSize(labelWidth, rowHeight))
+		field.Move(fyne.NewPos(labelWidth+l.ColumnGap, y))
+		field.Resize(fyne.NewSize(controlWidth, rowHeight))
+		y += rowHeight + l.RowGap
+	}
+}
+
+func (l compactSettingsGridLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	width := l.labelWidth(objects) + l.ColumnGap + l.ControlWidth
+	height := float32(0)
+	rows := 0
+	for i := 0; i+1 < len(objects); i += 2 {
+		label, field := objects[i], objects[i+1]
+		if !label.Visible() || !field.Visible() {
+			continue
+		}
+		height += max(l.MinRowHeight, label.MinSize().Height, field.MinSize().Height)
+		rows++
+	}
+	if rows > 1 {
+		height += float32(rows-1) * l.RowGap
+	}
+	return fyne.NewSize(width, height)
+}
+
+func (l compactSettingsGridLayout) labelWidth(objects []fyne.CanvasObject) float32 {
+	width := float32(0)
+	for i := 0; i < len(objects); i += 2 {
+		if objects[i].Visible() {
+			width = max(width, objects[i].MinSize().Width)
+		}
+	}
+	return width
 }
 
 // Application settings screen.
