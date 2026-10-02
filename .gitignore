@@ -12,6 +12,7 @@ attachments/
 # IDE
 .vscode/
 .idea/
+NoteHub.zip
 
 # OS
 .DS_Store
