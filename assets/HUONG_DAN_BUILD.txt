@@ -1,0 +1,23 @@
+NOTEHUB WINDOWS RUNTIME DEPLOYMENT FIX
+
+Loi Qt6Widgets.dll / Qt6Gui.dll / Qt6Core.dll / libgcc_s_seh-1.dll khong phai loi logic C++/Go.
+No xay ra khi NoteHub.exe duoc chay ma khong co bo Qt + MinGW runtime o cung thu muc.
+
+Cach build lai sach:
+  .\scripts\build-windows.ps1 `
+      -QtRoot "C:\Qt\6.11.2\mingw_64" `
+      -Compiler "C:\Qt\Tools\mingw1310_64\bin\g++.exe" `
+      -Clean `
+      -ForceCloseRunning
+
+Sau do CHI chay:
+  .\dist\windows\NoteHub.exe
+
+Neu da co dist\windows\NoteHub.exe + notehub-core.exe va chi thieu DLL:
+  .\scripts\deploy-windows.ps1 `
+      -QtRoot "C:\Qt\6.11.2\mingw_64" `
+      -Compiler "C:\Qt\Tools\mingw1310_64\bin\g++.exe" `
+      -AppDirectory "dist\windows"
+
+Khong copy mot minh NoteHub.exe sang thu muc khac.
+Khi phat hanh, phai copy/zip TOAN BO thu muc dist\windows.
