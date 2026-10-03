@@ -23,7 +23,7 @@ void paintGlyph(QPainter &p, Glyph glyph, const QColor &color, const QRectF &bou
     p.translate(offset);
     p.scale(scale, scale);
     constexpr qreal pi = 3.14159265358979323846;
-    QPen pen(color, 1.75, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    QPen pen(color, 1.85, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     p.setPen(pen);
     p.setBrush(Qt::NoBrush);
 
@@ -186,7 +186,7 @@ class PaletteIconEngine final : public QIconEngine {
             color = palette.color(QPalette::Text);
         else
             color = palette.color(QPalette::PlaceholderText);
-        paintGlyph(*painter, glyph, color, rect.adjusted(2, 2, -2, -2), state == QIcon::On && glyph == Glyph::Star);
+        paintGlyph(*painter, glyph, color, rect.adjusted(1, 1, -1, -1), state == QIcon::On && glyph == Glyph::Star);
     }
 
     QPixmap pixmap(const QSize &size, QIcon::Mode mode, QIcon::State state) override {
@@ -317,26 +317,69 @@ class ArrowFontComboBox final : public QFontComboBox {
     bool popupOpen = false;
 };
 
-class ArrowSpinBox final : public QSpinBox {
+class SpinStepButton final : public QToolButton {
   public:
-    using QSpinBox::QSpinBox;
+    enum Direction { Up, Down };
+
+    SpinStepButton(Direction direction, QWidget *parent = nullptr) : QToolButton(parent), direction(direction) {
+        setObjectName("spinStepButton");
+        setFocusPolicy(Qt::NoFocus);
+        setCursor(Qt::ArrowCursor);
+        setAutoRepeat(true);
+        setAutoRepeatDelay(350);
+        setAutoRepeatInterval(80);
+        setToolTip(direction == Up ? QObject::tr("Increase") : QObject::tr("Decrease"));
+    }
 
   protected:
     void paintEvent(QPaintEvent *event) override {
-        QSpinBox::paintEvent(event);
+        QToolButton::paintEvent(event);
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         const auto group = isEnabled() ? QPalette::Active : QPalette::Disabled;
         const QColor color = palette().color(group, QPalette::Text);
-        painter.setPen(QPen(color, 1.45, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        const qreal cx = width() - 14.0;
-        const qreal topY = height() * 0.31;
-        const qreal bottomY = height() * 0.69;
-        painter.drawPolyline(QPolygonF{QPointF(cx - 3.4, topY + 1.6), QPointF(cx, topY - 1.6),
-                                      QPointF(cx + 3.4, topY + 1.6)});
-        painter.drawPolyline(QPolygonF{QPointF(cx - 3.4, bottomY - 1.6), QPointF(cx, bottomY + 1.6),
-                                      QPointF(cx + 3.4, bottomY - 1.6)});
+        painter.setPen(QPen(color, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        const QPointF c = rect().center();
+        const qreal dy = direction == Up ? 1.7 : -1.7;
+        painter.drawPolyline(QPolygonF{QPointF(c.x() - 3.6, c.y() + dy),
+                                      QPointF(c.x(), c.y() - dy),
+                                      QPointF(c.x() + 3.6, c.y() + dy)});
     }
+
+  private:
+    Direction direction;
+};
+
+class ArrowSpinBox final : public QSpinBox {
+  public:
+    explicit ArrowSpinBox(QWidget *parent = nullptr) : QSpinBox(parent) {
+        // Native QSpinBox sub-controls are style-dependent.  On some Windows
+        // styles the lower half of a custom-painted spin box can still hit the
+        // native UP sub-control.  Removing the native buttons and using two
+        // explicit child buttons makes step-up / step-down deterministic.
+        setButtonSymbols(QAbstractSpinBox::NoButtons);
+        increase = new SpinStepButton(SpinStepButton::Up, this);
+        decrease = new SpinStepButton(SpinStepButton::Down, this);
+        increase->setObjectName("spinIncreaseButton");
+        decrease->setObjectName("spinDecreaseButton");
+        connect(increase, &QToolButton::clicked, this, &QAbstractSpinBox::stepUp);
+        connect(decrease, &QToolButton::clicked, this, &QAbstractSpinBox::stepDown);
+    }
+
+  protected:
+    void resizeEvent(QResizeEvent *event) override {
+        QSpinBox::resizeEvent(event);
+        constexpr int buttonWidth = 30;
+        const int half = height() / 2;
+        increase->setGeometry(width() - buttonWidth - 1, 1, buttonWidth, qMax(1, half - 1));
+        decrease->setGeometry(width() - buttonWidth - 1, half, buttonWidth, qMax(1, height() - half - 1));
+        increase->raise();
+        decrease->raise();
+    }
+
+  private:
+    SpinStepButton *increase = nullptr;
+    SpinStepButton *decrease = nullptr;
 };
 
 void applyCalendarChrome(QCalendarWidget *widget) {
@@ -1267,6 +1310,7 @@ void MainWindow::addNote(const QJsonObject &memo) {
     auto edit = button(tr("Edit"));
     edit->setObjectName("textAction");
     edit->setIcon(lineIcon(Glyph::Edit));
+    edit->setIconSize({18, 18});
     auto menu = iconButton(Glyph::More, tr("More actions"));
     top->addWidget(favorite);
     top->addWidget(edit);
@@ -1925,14 +1969,13 @@ void MainWindow::applyAppearance() {
             border:0; width:30px; subcontrol-origin:padding; subcontrol-position:top right;
         }
         QComboBox::down-arrow, QFontComboBox::down-arrow { image:none; width:0; height:0; }
-        QSpinBox#fontSizeSpin { padding-right:30px; }
-        QSpinBox#fontSizeSpin::up-button {
-            border:0; width:28px; subcontrol-origin:border; subcontrol-position:top right; height:50%;
+        QSpinBox#fontSizeSpin { padding-right:32px; }
+        QToolButton#spinIncreaseButton, QToolButton#spinDecreaseButton {
+            border:0; padding:0; margin:0; border-radius:4px; background:transparent;
         }
-        QSpinBox#fontSizeSpin::down-button {
-            border:0; width:28px; subcontrol-origin:border; subcontrol-position:bottom right; height:50%;
-        }
-        QSpinBox#fontSizeSpin::up-arrow, QSpinBox#fontSizeSpin::down-arrow { image:none; width:0; height:0; }
+        QToolButton#spinIncreaseButton:hover, QToolButton#spinDecreaseButton:hover { background:%7; }
+        QToolButton#spinIncreaseButton:pressed, QToolButton#spinDecreaseButton:pressed { background:%9; }
+        QToolButton#spinIncreaseButton:disabled, QToolButton#spinDecreaseButton:disabled { background:transparent; }
         QComboBox QAbstractItemView, QFontComboBox QAbstractItemView {
             background:%3; color:%1; border:1px solid %4; border-radius:8px;
             selection-background-color:%9; selection-color:%6; padding:4px;
@@ -2003,10 +2046,18 @@ void MainWindow::applyAppearance() {
             background:%10; border:1px solid %4; border-radius:10px; spacing:2px; padding:4px;
         }
         QToolBar#editorToolbar QToolButton {
-            min-width:30px; min-height:30px; padding:4px; border-radius:7px;
+            min-width:34px; min-height:34px; padding:4px; border-radius:7px;
         }
         QToolBar#editorToolbar QToolButton:hover { background:%7; }
-        QToolBar#editorToolbar QToolButton:pressed { background:%9; }
+        QToolBar#editorToolbar QToolButton:pressed,
+        QToolBar#editorToolbar QToolButton:checked { background:%9; color:%6; }
+        QToolBar#editorToolbar QToolButton#editorSpinUp,
+        QToolBar#editorToolbar QToolButton#editorSpinDown {
+            min-width:0; min-height:0; padding:0; margin:0; border:0; border-radius:3px; background:transparent;
+        }
+        QToolBar#editorToolbar QToolButton#editorSpinUp:hover,
+        QToolBar#editorToolbar QToolButton#editorSpinDown:hover { background:%7; }
+        QSpinBox#editorFontSize { padding-right:28px; }
         QToolBar#editorToolbar::separator {
             background:%4; width:1px; margin:6px 5px;
         }

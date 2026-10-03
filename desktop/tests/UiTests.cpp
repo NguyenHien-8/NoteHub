@@ -64,6 +64,28 @@ class UiTests final : public QObject {
         QCOMPARE(codeReopened.textEdit()->toPlainText(), command);
     }
 
+    void editorToolbarUsesReadableVectorIcons() {
+        NoteEditor editor;
+        editor.resize(1000, 640);
+        editor.show();
+        QCoreApplication::processEvents();
+        auto toolbar = editor.findChild<QToolBar *>("editorToolbar");
+        QVERIFY(toolbar);
+        QVERIFY(toolbar->iconSize().width() >= 24);
+        QVERIFY(toolbar->iconSize().height() >= 24);
+        int iconActions = 0;
+        for (auto action : toolbar->actions()) {
+            if (action->isSeparator() || action->icon().isNull())
+                continue;
+            ++iconActions;
+            const auto pixmap = action->icon().pixmap(toolbar->iconSize());
+            QVERIFY(!pixmap.isNull());
+            QVERIFY(pixmap.width() >= 24);
+            QVERIFY(!action->toolTip().isEmpty());
+        }
+        QVERIFY(iconActions >= 10);
+    }
+
     void markdownAndRichTextDoNotLoadResources() {
         LocalTextDocument doc;
         loadNoteDocument(&doc, "![private](file:///missing/private.png)");
@@ -202,6 +224,15 @@ class UiTests final : public QObject {
         QVERIFY(font->maximumWidth() <= 340);
         QVERIFY(appearance->maximumWidth() <= 230);
         QVERIFY(size->maximumWidth() <= 120);
+        size->setValue(12);
+        auto decrease = size->findChild<QToolButton *>("spinDecreaseButton");
+        auto increase = size->findChild<QToolButton *>("spinIncreaseButton");
+        QVERIFY(decrease);
+        QVERIFY(increase);
+        QTest::mouseClick(decrease, Qt::LeftButton);
+        QCOMPARE(size->value(), 11);
+        QTest::mouseClick(increase, Qt::LeftButton);
+        QCOMPARE(size->value(), 12);
         auto calendarView = miniCalendar->findChild<QAbstractItemView *>();
         QVERIFY(calendarView);
         appearance->setCurrentText("Dark");

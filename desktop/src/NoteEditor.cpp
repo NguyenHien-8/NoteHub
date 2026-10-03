@@ -38,13 +38,13 @@ void drawEditorGlyph(QPainter &p, EditorGlyph glyph, const QColor &color, const 
     const qreal scale = qMin(bounds.width(), bounds.height()) / 24.0;
     p.translate(bounds.center().x() - 12.0 * scale, bounds.center().y() - 12.0 * scale);
     p.scale(scale, scale);
-    QPen pen(color, 1.65, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    QPen pen(color, 1.9, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     p.setPen(pen);
     p.setBrush(Qt::NoBrush);
 
     auto drawLetter = [&](const QString &text, bool bold = false, bool italic = false) {
         QFont font = qApp ? qApp->font() : QFont();
-        font.setPixelSize(15);
+        font.setPixelSize(17);
         font.setBold(bold);
         font.setItalic(italic);
         p.setFont(font);
@@ -98,7 +98,7 @@ void drawEditorGlyph(QPainter &p, EditorGlyph glyph, const QColor &color, const 
         break;
     case EditorGlyph::Numbered: {
         QFont font = qApp ? qApp->font() : QFont();
-        font.setPixelSize(7);
+        font.setPixelSize(8);
         p.setFont(font);
         for (int i = 0; i < 3; ++i) {
             const qreal y = 6.0 + i * 5.7;
@@ -125,7 +125,7 @@ void drawEditorGlyph(QPainter &p, EditorGlyph glyph, const QColor &color, const 
         path.cubicTo(12, 4, 20, 6, 20, 13);
         path.cubicTo(20, 18, 15.5, 20, 11, 19);
         p.drawPath(path);
-        p.drawPolyline(QPolygonF{QPointF(8, 4), QPointF(8, 9), QPointF(3, 9)});
+        p.drawPolyline(QPolygonF{QPointF(7.5, 4.5), QPointF(3.5, 8.5), QPointF(7.5, 12.5)});
         break;
     }
     case EditorGlyph::Redo: {
@@ -134,7 +134,7 @@ void drawEditorGlyph(QPainter &p, EditorGlyph glyph, const QColor &color, const 
         path.cubicTo(12, 4, 4, 6, 4, 13);
         path.cubicTo(4, 18, 8.5, 20, 13, 19);
         p.drawPath(path);
-        p.drawPolyline(QPolygonF{QPointF(16, 4), QPointF(16, 9), QPointF(21, 9)});
+        p.drawPolyline(QPolygonF{QPointF(16.5, 4.5), QPointF(20.5, 8.5), QPointF(16.5, 12.5)});
         break;
     }
     case EditorGlyph::Attachment: {
@@ -158,11 +158,13 @@ class EditorIconEngine final : public QIconEngine {
     QIconEngine *clone() const override {
         return new EditorIconEngine(glyph);
     }
-    void paint(QPainter *painter, const QRect &rect, QIcon::Mode mode, QIcon::State) override {
+    void paint(QPainter *painter, const QRect &rect, QIcon::Mode mode, QIcon::State state) override {
         const auto palette = qApp ? qApp->palette() : QPalette();
         const auto group = mode == QIcon::Disabled ? QPalette::Disabled : QPalette::Active;
-        const QColor color = palette.color(group, QPalette::Text);
-        drawEditorGlyph(*painter, glyph, color, rect.adjusted(2, 2, -2, -2));
+        const QColor color = state == QIcon::On && mode != QIcon::Disabled
+                                 ? palette.color(QPalette::Active, QPalette::Highlight)
+                                 : palette.color(group, QPalette::Text);
+        drawEditorGlyph(*painter, glyph, color, rect.adjusted(1, 1, -1, -1));
     }
     QPixmap pixmap(const QSize &size, QIcon::Mode mode, QIcon::State state) override {
         QPixmap pixmap(size);
@@ -179,6 +181,60 @@ class EditorIconEngine final : public QIconEngine {
 QIcon editorIcon(EditorGlyph glyph) {
     return QIcon(new EditorIconEngine(glyph));
 }
+
+class EditorStepButton final : public QToolButton {
+  public:
+    EditorStepButton(bool up, QWidget *parent = nullptr) : QToolButton(parent), up(up) {
+        setObjectName(up ? "editorSpinUp" : "editorSpinDown");
+        setFocusPolicy(Qt::NoFocus);
+        setAutoRepeat(true);
+        setAutoRepeatDelay(350);
+        setAutoRepeatInterval(80);
+        setToolTip(up ? QObject::tr("Increase font size") : QObject::tr("Decrease font size"));
+    }
+
+  protected:
+    void paintEvent(QPaintEvent *event) override {
+        QToolButton::paintEvent(event);
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const auto group = isEnabled() ? QPalette::Active : QPalette::Disabled;
+        painter.setPen(QPen(palette().color(group, QPalette::Text), 1.65, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        const QPointF c = rect().center();
+        const qreal dy = up ? 1.6 : -1.6;
+        painter.drawPolyline(QPolygonF{QPointF(c.x() - 3.2, c.y() + dy), QPointF(c.x(), c.y() - dy),
+                                      QPointF(c.x() + 3.2, c.y() + dy)});
+    }
+
+  private:
+    bool up;
+};
+
+class EditorSizeSpinBox final : public QSpinBox {
+  public:
+    explicit EditorSizeSpinBox(QWidget *parent = nullptr) : QSpinBox(parent) {
+        setButtonSymbols(QAbstractSpinBox::NoButtons);
+        auto up = new EditorStepButton(true, this);
+        auto down = new EditorStepButton(false, this);
+        increase = up;
+        decrease = down;
+        connect(up, &QToolButton::clicked, this, &QAbstractSpinBox::stepUp);
+        connect(down, &QToolButton::clicked, this, &QAbstractSpinBox::stepDown);
+    }
+
+  protected:
+    void resizeEvent(QResizeEvent *event) override {
+        QSpinBox::resizeEvent(event);
+        constexpr int buttonWidth = 26;
+        const int half = height() / 2;
+        increase->setGeometry(width() - buttonWidth - 1, 1, buttonWidth, qMax(1, half - 1));
+        decrease->setGeometry(width() - buttonWidth - 1, half, buttonWidth, qMax(1, height() - half - 1));
+    }
+
+  private:
+    QToolButton *increase = nullptr;
+    QToolButton *decrease = nullptr;
+};
 
 class RichPasteTextEdit final : public QTextEdit {
   public:
@@ -254,7 +310,7 @@ NoteEditor::NoteEditor(QWidget *parent) : QWidget(parent) {
     toolbar->setMovable(false);
     toolbar->setFloatable(false);
     toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    toolbar->setIconSize({19, 19});
+    toolbar->setIconSize({24, 24});
     layout->addWidget(toolbar);
 
     rich = new RichPasteTextEdit(this);
@@ -288,6 +344,7 @@ NoteEditor::NoteEditor(QWidget *parent) : QWidget(parent) {
     auto action = [this](EditorGlyph glyph, const QString &label, const QString &hint,
                          const QKeySequence &shortcut, auto callback) {
         auto a = toolbar->addAction(editorIcon(glyph), label);
+        a->setObjectName(QStringLiteral("editorAction_%1").arg(static_cast<int>(glyph)));
         a->setToolTip(hint);
         a->setShortcut(shortcut);
         a->setShortcutContext(Qt::WidgetWithChildrenShortcut);
@@ -296,36 +353,46 @@ NoteEditor::NoteEditor(QWidget *parent) : QWidget(parent) {
         return a;
     };
 
-    action(EditorGlyph::Bold, tr("Bold"), tr("Bold · Ctrl+B"), QKeySequence::Bold, [this] {
+    auto boldAction = action(EditorGlyph::Bold, tr("Bold"), tr("Bold · Ctrl+B"), QKeySequence::Bold, [this] {
         QTextCharFormat f;
         f.setFontWeight(rich->fontWeight() == QFont::Bold ? QFont::Normal : QFont::Bold);
         format(f);
     });
-    action(EditorGlyph::Italic, tr("Italic"), tr("Italic · Ctrl+I"), QKeySequence::Italic, [this] {
+    auto italicAction = action(EditorGlyph::Italic, tr("Italic"), tr("Italic · Ctrl+I"), QKeySequence::Italic, [this] {
         QTextCharFormat f;
         f.setFontItalic(!rich->fontItalic());
         format(f);
     });
-    action(EditorGlyph::Underline, tr("Underline"), tr("Underline · Ctrl+U"), QKeySequence::Underline, [this] {
+    auto underlineAction = action(EditorGlyph::Underline, tr("Underline"), tr("Underline · Ctrl+U"), QKeySequence::Underline, [this] {
         QTextCharFormat f;
         f.setFontUnderline(!rich->fontUnderline());
         format(f);
     });
-    action(EditorGlyph::Strike, tr("Strikethrough"), tr("Strikethrough"), {}, [this] {
+    auto strikeAction = action(EditorGlyph::Strike, tr("Strikethrough"), tr("Strikethrough"), {}, [this] {
         QTextCharFormat f;
         f.setFontStrikeOut(!rich->currentCharFormat().fontStrikeOut());
         format(f);
     });
+    for (auto a : {boldAction, italicAction, underlineAction, strikeAction})
+        a->setCheckable(true);
+    connect(rich, &QTextEdit::currentCharFormatChanged, this,
+            [boldAction, italicAction, underlineAction, strikeAction](const QTextCharFormat &f) {
+                const QSignalBlocker b1(boldAction), b2(italicAction), b3(underlineAction), b4(strikeAction);
+                boldAction->setChecked(f.fontWeight() >= QFont::DemiBold);
+                italicAction->setChecked(f.fontItalic());
+                underlineAction->setChecked(f.fontUnderline());
+                strikeAction->setChecked(f.fontStrikeOut());
+            });
 
     toolbar->addSeparator();
-    auto size = new QSpinBox(toolbar);
+    auto size = new EditorSizeSpinBox(toolbar);
     size->setObjectName("editorFontSize");
     size->setRange(8, 72);
     size->setValue(12);
     size->setSuffix(" pt");
     size->setToolTip(tr("Font size"));
     size->setFocusPolicy(Qt::ClickFocus);
-    size->setFixedWidth(92);
+    size->setFixedWidth(104);
     toolbar->addWidget(size);
     connect(size, &QSpinBox::valueChanged, this, [this](int n) {
         QTextCharFormat f;
