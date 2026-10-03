@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  # Qt 6.8.3 is not compatible with macOS 26's removed AGL framework.
-  QT_VERSION: '6.8.4'
+  # Match CI and the supported local desktop toolchain.
+  QT_VERSION: '6.11.2'
 
 jobs:
   validate:
@@ -49,7 +49,6 @@ jobs:
             printf '%s\n' "$unformatted"
             exit 1
           fi
-
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
@@ -74,10 +73,13 @@ jobs:
         include:
           - os: windows-2022
             platform: windows
+            qt_arch: win64_msvc2022_64
           - os: macos-latest
             platform: macos
+            qt_arch: clang_64
           - os: ubuntu-24.04
             platform: linux
+            qt_arch: linux_gcc_64
 
     env:
       NOTEHUB_VERSION: ${{ needs.validate.outputs.version }}
@@ -92,12 +94,19 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Install Qt
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@v4.3.1
         with:
           version: ${{ env.QT_VERSION }}
+          arch: ${{ matrix.qt_arch }}
           cache: true
+          cache-key-prefix: notehub-release-qt-${{ runner.os }}-${{ matrix.qt_arch }}
           install-deps: true
-          arch: ${{ runner.os == 'Windows' && 'win64_msvc2022_64' || '' }}
+
+      - name: Verify Qt installation
+        shell: bash
+        run: |
+          qmake6 -query QT_VERSION 2>/dev/null || qmake -query QT_VERSION
+          cmake --version
 
       - name: Configure release (Windows)
         if: runner.os == 'Windows'
@@ -108,6 +117,7 @@ jobs:
             -A x64 `
             "-DNOTEHUB_VERSION=$env:NOTEHUB_VERSION" `
             -DBUILD_TESTING=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure release (macOS/Linux)
         if: runner.os != 'Windows'
@@ -131,16 +141,20 @@ jobs:
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
           New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
-          # Absolute prefix is required by the generated Qt deployment script.
           cmake --install build/qt-release --config Release --prefix "$installDir"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $gui = Join-Path $installDir 'NoteHub.exe'
           $core = Join-Path $installDir 'notehub-core.exe'
           if (-not (Test-Path $gui)) { throw "Missing $gui" }
           if (-not (Test-Path $core)) { throw "Missing $core" }
 
-          # Safety net for Qt/MSVC runtime files.
           windeployqt --release --compiler-runtime --no-translations "$gui"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          if (-not (Test-Path (Join-Path $installDir 'platforms\qwindows.dll'))) {
+            throw "Missing Qt Windows platform plugin."
+          }
 
           Copy-Item README.md, LICENSE -Destination $installDir -Force
           $zip = Join-Path $artifactDir "NoteHub-$env:NOTEHUB_VERSION-windows-x64.zip"
@@ -155,7 +169,6 @@ jobs:
           mkdir -p "$artifact_dir" "$install_dir"
 
           cmake --install build/qt-release --prefix "$install_dir"
-
           test -d "$install_dir/NoteHub.app"
           test -x "$install_dir/NoteHub.app/Contents/MacOS/NoteHub"
           test -x "$install_dir/NoteHub.app/Contents/MacOS/notehub-core"
@@ -186,7 +199,6 @@ jobs:
           mkdir -p "$artifact_dir" "$install_dir"
 
           cmake --install build/qt-release --prefix "$install_dir"
-
           test -x "$install_dir/NoteHub"
           test -x "$install_dir/notehub-core"
 

@@ -10,9 +10,9 @@ permissions:
 
 env:
   NOTEHUB_VERSION: '0.3.0'
-  # Qt 6.8.3 links the removed AGL framework on macOS 26 / Xcode 26.
-  # Qt 6.8.4 contains the relevant Tahoe fix.
-  QT_VERSION: '6.8.4'
+  # Keep CI on a real Qt binary release available from the Qt online repository.
+  # NoteHub is also developed locally with Qt 6.11.2.
+  QT_VERSION: '6.11.2'
 
 jobs:
   quality:
@@ -78,10 +78,13 @@ jobs:
         include:
           - os: windows-2022
             platform: windows
+            qt_arch: win64_msvc2022_64
           - os: macos-latest
             platform: macos
+            qt_arch: clang_64
           - os: ubuntu-24.04
             platform: linux
+            qt_arch: linux_gcc_64
 
     steps:
       - uses: actions/checkout@v7
@@ -93,12 +96,19 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Install Qt
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@v4.3.1
         with:
           version: ${{ env.QT_VERSION }}
+          arch: ${{ matrix.qt_arch }}
           cache: true
+          cache-key-prefix: notehub-qt-${{ runner.os }}-${{ matrix.qt_arch }}
           install-deps: true
-          arch: ${{ runner.os == 'Windows' && 'win64_msvc2022_64' || '' }}
+
+      - name: Verify Qt installation
+        shell: bash
+        run: |
+          qmake6 -query QT_VERSION 2>/dev/null || qmake -query QT_VERSION
+          cmake --version
 
       - name: Configure Qt desktop (Windows)
         if: runner.os == 'Windows'
@@ -109,6 +119,7 @@ jobs:
             -A x64 `
             "-DNOTEHUB_VERSION=$env:NOTEHUB_VERSION" `
             -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure Qt desktop (macOS/Linux)
         if: runner.os != 'Windows'
@@ -133,16 +144,17 @@ jobs:
         run: |
           $stage = Join-Path $env:GITHUB_WORKSPACE 'build\stage'
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-
-          # Use an absolute install prefix. Qt's deploy script rejects a relative
-          # prefix because it would create a relative qt.conf path.
           cmake --install build/qt-ci --config Release --prefix "$stage"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           if (-not (Test-Path (Join-Path $stage 'NoteHub.exe'))) {
             throw "NoteHub.exe was not installed."
           }
           if (-not (Test-Path (Join-Path $stage 'notehub-core.exe'))) {
             throw "notehub-core.exe was not installed."
+          }
+          if (-not (Test-Path (Join-Path $stage 'platforms\qwindows.dll'))) {
+            throw "Qt Windows platform plugin was not deployed."
           }
 
       - name: Verify Linux install layout
@@ -151,10 +163,7 @@ jobs:
         run: |
           stage="$GITHUB_WORKSPACE/build/stage"
           mkdir -p "$stage"
-
-          # Must be absolute for qt_generate_deploy_app_script().
           cmake --install build/qt-ci --prefix "$stage"
-
           test -x "$stage/NoteHub"
           test -x "$stage/notehub-core"
 
@@ -164,9 +173,7 @@ jobs:
         run: |
           stage="$GITHUB_WORKSPACE/build/stage"
           mkdir -p "$stage"
-
           cmake --install build/qt-ci --prefix "$stage"
-
           test -d "$stage/NoteHub.app"
           test -x "$stage/NoteHub.app/Contents/MacOS/NoteHub"
           test -x "$stage/NoteHub.app/Contents/MacOS/notehub-core"
