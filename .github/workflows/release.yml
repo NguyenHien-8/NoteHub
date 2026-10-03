@@ -8,21 +8,24 @@ on:
 permissions:
   contents: read
 
+env:
+  QT_VERSION: '6.8.3'
+
 jobs:
-  quality:
-    name: Validate release source
+  validate:
+    name: Validate release
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     outputs:
       version: ${{ steps.version.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
           cache: true
+          cache-dependency-path: go.sum
 
       - name: Validate release version
         id: version
@@ -35,149 +38,139 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Check Go formatting
+      - name: Check Go formatting and modules
         shell: bash
         run: |
           unformatted="$(git ls-files -z -- '*.go' | xargs -0 -r gofmt -l)"
           if [ -n "$unformatted" ]; then
-            echo "::error title=Go source is not formatted::Run gofmt before creating the release tag."
             printf '%s\n' "$unformatted"
             exit 1
           fi
-
-      - name: Check module files are tidy
-        shell: bash
-        run: |
           go mod tidy
-          if ! git diff --exit-code -- go.mod go.sum; then
-            echo "::error title=Go module files are not tidy::Run 'go mod tidy' and commit go.mod/go.sum before tagging."
-            exit 1
-          fi
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Test and vet Go backend
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go test ./...
+          go vet ./...
+          go build -trimpath -o "${RUNNER_TEMP}/notehub-core" ./cmd/notehub-core
 
   package:
     name: Package (${{ matrix.os }})
-    needs: quality
+    needs: validate
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            cc: gcc
+          - os: windows-2022
             platform: windows
           - os: macos-latest
-            cc: clang
             platform: macos
           - os: ubuntu-24.04
-            cc: gcc
             platform: linux
 
     env:
-      CGO_ENABLED: '1'
-      CC: ${{ matrix.cc }}
-      NOTEHUB_VERSION: ${{ needs.quality.outputs.version }}
-
-    defaults:
-      run:
-        shell: bash
+      NOTEHUB_VERSION: ${{ needs.validate.outputs.version }}
 
     steps:
-      - name: Preserve repository line endings
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: git config --global core.autocrlf false
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: Install Windows compiler
+      - name: Install Qt on Windows
         if: runner.os == 'Windows'
-        id: msys2
-        uses: msys2/setup-msys2@v2
+        uses: jurplel/install-qt-action@v4
         with:
-          msystem: UCRT64
-          update: true
-          install: mingw-w64-ucrt-x86_64-gcc
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
 
-      - name: Add Windows compiler to PATH
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
-        run: |
-          $gccDir = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
-          $gcc = Join-Path $gccDir 'gcc.exe'
-          if (-not (Test-Path -LiteralPath $gcc -PathType Leaf)) {
-            throw "gcc.exe was not found at $gcc"
-          }
-          $gccDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install Qt on macOS/Linux
+        if: runner.os != 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+          install-deps: true
 
-      - name: Install Linux native dependencies
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc \
-            pkg-config \
-            libgl1-mesa-dev \
-            libx11-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxi-dev \
-            libxxf86vm-dev \
-            zenity \
-            xdg-utils \
-            xvfb
-
-      - name: Verify native source before packaging
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a go test ./...
-          else
-            go test ./...
-          fi
-          go vet ./...
-          go build ./cmd/notehub
-
-      - name: Build Windows executable and ZIP
+      - name: Configure release (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          ./scripts/build-windows.ps1 -Version $env:NOTEHUB_VERSION
-          Copy-Item -LiteralPath README.md, LICENSE -Destination dist/windows
-          $arch = go env GOARCH
-          if ($LASTEXITCODE -ne 0) { throw 'Could not determine GOARCH.' }
-          Compress-Archive `
-            -LiteralPath dist/windows/NoteHub.exe, dist/windows/README.md, dist/windows/LICENSE `
-            -DestinationPath "dist/windows/NoteHub-${env:NOTEHUB_VERSION}-windows-$arch.zip" `
-            -Force
+          cmake -S . -B build/qt-release `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            "-DNOTEHUB_VERSION=$env:NOTEHUB_VERSION" `
+            -DBUILD_TESTING=OFF
 
-      - name: Build macOS app bundle and DMG
+      - name: Configure release (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build/qt-release \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNOTEHUB_VERSION="$NOTEHUB_VERSION" \
+            -DBUILD_TESTING=OFF
+
+      - name: Build release
+        shell: bash
+        run: cmake --build build/qt-release --config Release --parallel
+
+      - name: Install release (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          cmake --install build/qt-release --config Release --prefix dist/windows
+          if (-not (Test-Path dist/windows/NoteHub.exe)) { throw "Missing NoteHub.exe" }
+          if (-not (Test-Path dist/windows/notehub-core.exe)) { throw "Missing notehub-core.exe" }
+          windeployqt --release --compiler-runtime --no-translations dist/windows/NoteHub.exe
+          Copy-Item README.md, LICENSE -Destination dist/windows -Force
+          Compress-Archive -Path dist/windows/* `
+            -DestinationPath "artifacts/NoteHub-$env:NOTEHUB_VERSION-windows-x64.zip" -Force
+
+      - name: Install release (macOS)
         if: runner.os == 'macOS'
         shell: bash
-        run: bash scripts/build-macos.sh "$NOTEHUB_VERSION"
+        run: |
+          mkdir -p artifacts dist/macos
+          cmake --install build/qt-release --prefix dist/macos
+          test -d dist/macos/NoteHub.app
+          test -x dist/macos/NoteHub.app/Contents/MacOS/NoteHub
+          test -x dist/macos/NoteHub.app/Contents/MacOS/notehub-core
+          arch="$(uname -m)"
+          ditto -c -k --sequesterRsrc --keepParent             dist/macos/NoteHub.app             "artifacts/NoteHub-${NOTEHUB_VERSION}-macos-${arch}.app.zip"
+          stage="${RUNNER_TEMP}/notehub-dmg"
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          ditto dist/macos/NoteHub.app "$stage/NoteHub.app"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname NoteHub -srcfolder "$stage" -ov -format UDZO             "artifacts/NoteHub-${NOTEHUB_VERSION}-macos-${arch}.dmg"
 
-      - name: Build Linux binary and tarball
+      - name: Install release (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: bash scripts/build-linux.sh "$NOTEHUB_VERSION"
+        run: |
+          mkdir -p artifacts dist/linux
+          cmake --install build/qt-release --prefix dist/linux
+          test -x dist/linux/NoteHub
+          test -x dist/linux/notehub-core
+          cp README.md LICENSE dist/linux/
+          arch="$(uname -m)"
+          tar -C dist/linux -czf             "artifacts/NoteHub-${NOTEHUB_VERSION}-linux-${arch}.tar.gz" .
 
-      - name: Upload native packages
+      - name: Upload native package
         uses: actions/upload-artifact@v4
         with:
           name: NoteHub-${{ env.NOTEHUB_VERSION }}-${{ matrix.platform }}
-          path: |
-            dist/${{ matrix.platform }}/*.exe
-            dist/${{ matrix.platform }}/*.zip
-            dist/${{ matrix.platform }}/*.dmg
-            dist/${{ matrix.platform }}/*.tar.gz
+          path: artifacts/*
           if-no-files-found: error
           retention-days: 30

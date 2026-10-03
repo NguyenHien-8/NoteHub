@@ -8,138 +8,145 @@ on:
 permissions:
   contents: read
 
+env:
+  NOTEHUB_VERSION: '0.3.0'
+  QT_VERSION: '6.8.3'
+
 jobs:
   quality:
-    name: Go formatting and module checks
+    name: Go quality checks
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
           cache: true
+          cache-dependency-path: go.sum
 
       - name: Check Go formatting
         shell: bash
         run: |
           unformatted="$(git ls-files -z -- '*.go' | xargs -0 -r gofmt -l)"
           if [ -n "$unformatted" ]; then
-            echo "::error title=Go source is not formatted::Run gofmt on the files listed below before pushing."
+            echo "::error title=Go source is not formatted::Run gofmt on the files below."
             printf '%s\n' "$unformatted"
-            echo
-            echo "Fix locally with:"
-            echo "  git ls-files '*.go' | xargs gofmt -w"
             exit 1
           fi
 
-      - name: Check module files are tidy
+      - name: Check module files
         shell: bash
         run: |
           go mod tidy
-          if ! git diff --exit-code -- go.mod go.sum; then
-            echo "::error title=Go module files are not tidy::Run 'go mod tidy' and commit go.mod/go.sum."
-            exit 1
-          fi
+          git diff --exit-code -- go.mod go.sum
 
-  native:
-    name: Native checks (${{ matrix.os }})
+      - name: Test Go backend
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: go test ./...
+
+      - name: Vet Go backend
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: go vet ./...
+
+      - name: Compile Go backend
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -o "${RUNNER_TEMP}/notehub-core" ./cmd/notehub-core
+
+  desktop:
+    name: Qt desktop (${{ matrix.os }})
     needs: quality
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            cc: gcc
+          - os: windows-2022
+            platform: windows
           - os: macos-latest
-            cc: clang
+            platform: macos
           - os: ubuntu-24.04
-            cc: gcc
-
-    env:
-      CGO_ENABLED: '1'
-      CC: ${{ matrix.cc }}
-
-    defaults:
-      run:
-        shell: bash
+            platform: linux
 
     steps:
-      - name: Preserve repository line endings
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: git config --global core.autocrlf false
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: Install Windows compiler
+      - name: Install Qt on Windows
         if: runner.os == 'Windows'
-        id: msys2
-        uses: msys2/setup-msys2@v2
+        uses: jurplel/install-qt-action@v4
         with:
-          msystem: UCRT64
-          update: true
-          install: mingw-w64-ucrt-x86_64-gcc
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
 
-      - name: Add Windows compiler to PATH
+      - name: Install Qt on macOS/Linux
+        if: runner.os != 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+          install-deps: true
+
+      - name: Configure Qt desktop (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: |
-          $gccDir = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
-          $gcc = Join-Path $gccDir 'gcc.exe'
-          if (-not (Test-Path -LiteralPath $gcc -PathType Leaf)) {
-            throw "gcc.exe was not found at $gcc"
-          }
-          $gccDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          cmake -S . -B build/qt-ci `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            "-DNOTEHUB_VERSION=$env:NOTEHUB_VERSION" `
+            -DBUILD_TESTING=ON
 
-      - name: Install Linux native dependencies
+      - name: Configure Qt desktop (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build/qt-ci \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNOTEHUB_VERSION="$NOTEHUB_VERSION" \
+            -DBUILD_TESTING=ON
+
+      - name: Build Qt desktop
+        shell: bash
+        run: cmake --build build/qt-ci --config Release --parallel
+
+      - name: Run Qt tests
+        shell: bash
+        run: ctest --test-dir build/qt-ci -C Release --output-on-failure
+
+      - name: Verify Windows install layout
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --install build/qt-ci --config Release --prefix build/stage
+          if (-not (Test-Path build/stage/NoteHub.exe)) { throw "NoteHub.exe was not installed." }
+          if (-not (Test-Path build/stage/notehub-core.exe)) { throw "notehub-core.exe was not installed." }
+
+      - name: Verify Linux install layout
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc \
-            pkg-config \
-            libgl1-mesa-dev \
-            libx11-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxi-dev \
-            libxxf86vm-dev \
-            zenity \
-            xdg-utils \
-            xvfb
+          cmake --install build/qt-ci --prefix build/stage
+          test -x build/stage/NoteHub
+          test -x build/stage/notehub-core
 
-      - name: Verify toolchain
+      - name: Verify macOS install layout
+        if: runner.os == 'macOS'
         shell: bash
         run: |
-          go version
-          "$CC" --version
-
-      - name: Test all packages
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a go test ./...
-          else
-            go test ./...
-          fi
-
-      - name: Vet all packages
-        shell: bash
-        run: go vet ./...
-
-      - name: Compile native desktop
-        shell: bash
-        run: go build ./cmd/notehub
+          cmake --install build/qt-ci --prefix build/stage
+          test -d build/stage/NoteHub.app
+          test -x build/stage/NoteHub.app/Contents/MacOS/NoteHub
+          test -x build/stage/NoteHub.app/Contents/MacOS/notehub-core
