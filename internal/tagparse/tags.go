@@ -1,6 +1,7 @@
 package tagparse
 
 import (
+	"github.com/NguyenHien-8/NoteHub/internal/notecontent"
 	"strings"
 	"unicode"
 )
@@ -12,6 +13,7 @@ import (
 // Markdown code fences and inline code are ignored because a #token inside code
 // should not become application metadata. Escaped hashtags are ignored too.
 func Extract(content string) []string {
+	content = notecontent.TagSource(content)
 	var out []string
 	seen := make(map[string]struct{})
 	lines := strings.Split(content, "\n")

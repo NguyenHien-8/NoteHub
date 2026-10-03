@@ -9,11 +9,22 @@ import (
 	"time"
 
 	"github.com/NguyenHien-8/NoteHub/internal/domain"
+	"github.com/NguyenHien-8/NoteHub/internal/notecontent"
 	"github.com/NguyenHien-8/NoteHub/internal/repository"
 )
 
 func unix(t time.Time) int64     { return t.UTC().Unix() }
 func fromUnix(v int64) time.Time { return time.Unix(v, 0).UTC() }
+
+// The original FTS triggers remain compatible with old databases. Rich-text
+// writes replace their index entry with visible text in the same transaction.
+func indexRichText(ctx context.Context, tx *sql.Tx, id int64, content string) error {
+	if !strings.HasPrefix(content, notecontent.RichPrefix) {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE memo_fts SET content=? WHERE rowid=?`, notecontent.Plain(content), id)
+	return err
+}
 
 func scanMemo(scanner interface{ Scan(...any) error }) (*domain.Memo, error) {
 	var m domain.Memo
@@ -45,6 +56,9 @@ func (s *Store) CreateMemo(ctx context.Context, memo *domain.Memo, tags []string
 		return err
 	}
 	memo.Revision = max64(memo.Revision, 1)
+	if err := indexRichText(ctx, tx, memo.ID, memo.Content); err != nil {
+		return err
+	}
 	if err := replaceTagsTx(ctx, tx, memo.ID, tags); err != nil {
 		return err
 	}
@@ -67,6 +81,9 @@ func (s *Store) CreateImportedMemo(ctx context.Context, memo *domain.Memo, tags 
 		return err
 	}
 	memo.Revision = max64(memo.Revision, 1)
+	if err := indexRichText(ctx, tx, memo.ID, memo.Content); err != nil {
+		return err
+	}
 	if err := replaceTagsTx(ctx, tx, memo.ID, tags); err != nil {
 		return err
 	}
@@ -114,6 +131,9 @@ func (s *Store) UpdateMemo(ctx context.Context, id, expectedRevision int64, cont
 		}
 		return nil, domain.ErrConflict
 	}
+	if err := indexRichText(ctx, tx, id, content); err != nil {
+		return nil, err
+	}
 	if err := replaceTagsTx(ctx, tx, id, tags); err != nil {
 		return nil, err
 	}
@@ -152,6 +172,9 @@ func (s *Store) ReplaceImportedMemo(ctx context.Context, id int64, memo *domain.
 
 	if _, err := tx.ExecContext(ctx, `UPDATE memo SET content=?,created_ts=?,updated_ts=?,favorite=?,revision=revision+1 WHERE id=?`,
 		memo.Content, unix(memo.CreatedAt), unix(memo.UpdatedAt), memo.Favorite, id); err != nil {
+		return nil, err
+	}
+	if err := indexRichText(ctx, tx, id, memo.Content); err != nil {
 		return nil, err
 	}
 	if err := replaceTagsTx(ctx, tx, id, tags); err != nil {

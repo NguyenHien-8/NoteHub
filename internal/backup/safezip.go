@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"path"
 	"regexp"
 	"slices"
@@ -263,7 +264,11 @@ func validateMemoRecord(rec MemoRecord) error {
 			return fmt.Errorf("memo %s lists attachment %s twice", rec.UID, at.UID)
 		}
 		seen[at.UID] = struct{}{}
-		if at.Filename == "" || !mediaTypePattern.MatchString(at.Type) || at.Size < 0 || !sha256Pattern.MatchString(at.SHA256) {
+		// DetectContentType and TypeByExtension legitimately include parameters
+		// such as charset=utf-8. Accept them in existing backups, while rejecting
+		// malformed MIME values and header injection.
+		mediaType, _, typeErr := mime.ParseMediaType(at.Type)
+		if at.Filename == "" || typeErr != nil || strings.ContainsAny(at.Type, "\r\n") || !mediaTypePattern.MatchString(mediaType) || at.Size < 0 || !sha256Pattern.MatchString(at.SHA256) {
 			return fmt.Errorf("memo %s has invalid attachment metadata", rec.UID)
 		}
 		if _, err := ParseTime(at.CreateTime); err != nil {
