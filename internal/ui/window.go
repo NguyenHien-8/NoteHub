@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
 	"time"
 
@@ -136,8 +137,13 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 		container.NewHBox(search, rightToggle),
 		layout.NewSpacer()))
 	w.SetContent(container.NewBorder(header, nil, nil, nil, columns))
-	w.Resize(platform.InitialWindowSize(w.Canvas().Scale()))
-	w.CenterOnScreen()
+	w.Resize(platform.InitialWindowSize(application.Settings().Scale()))
+	// Fyne centers against the full monitor video mode, not the Windows work
+	// area. On Windows that can place a work-area-sized fallback partly under a
+	// taskbar. The maximized-at-creation GLFW hint owns Windows placement instead.
+	if runtime.GOOS != "windows" {
+		w.CenterOnScreen()
+	}
 	focus := func(fyne.Shortcut) { w.Canvas().Focus(d.GlobalSearch) }
 	w.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyK, Modifier: fyne.KeyModifierControl}, focus)
 	w.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyK, Modifier: fyne.KeyModifierSuper}, focus)
@@ -164,10 +170,14 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 	return d
 }
 
-// Show presents the already work-area-sized window. Avoiding a post-Show
-// native maximize prevents the visible small-window -> maximized jump on
-// Windows; InitialWindowSize has already fitted the client to the usable monitor.
+// Show prepares the native window's creation state before Fyne creates its
+// GLFW window. On Windows the window is created maximized while still hidden,
+// so the first visible frame already fits the OS work area and there is no
+// normal-window -> maximized startup flash. The process-wide creation hint is
+// reset immediately after Show returns so later windows keep normal defaults.
 func (d *Desktop) Show() {
+	restoreCreationHint := platform.PrepareWindowForShow()
+	defer restoreCreationHint()
 	d.Window.Show()
 }
 

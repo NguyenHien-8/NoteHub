@@ -50,3 +50,19 @@ func TestWindowClientSizeHandlesInvalidScale(t *testing.T) {
 		t.Fatalf("invalid scale fallback: %v", got)
 	}
 }
+
+func TestCombinedScaleMatchesPreShowWindowsScaling(t *testing.T) {
+	for _, tc := range []struct {
+		user, system, want float32
+	}{
+		{0, 1.5, 1.5},
+		{1, 1.25, 1.3},
+		{1.1, 1.5, 1.7},
+		{1, 2, 2},
+		{1, 0, 1},
+	} {
+		if got := combinedScale(tc.user, tc.system); got != tc.want {
+			t.Fatalf("combinedScale(%v, %v)=%v, want %v", tc.user, tc.system, got, tc.want)
+		}
+	}
+}

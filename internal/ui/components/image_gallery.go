@@ -45,6 +45,8 @@ type ImageGallery struct {
 	frameWidth       float32
 	frameHeight      float32
 	reflowAnimations map[*imageTile]*fyne.Animation
+	canReorder       func() bool
+	reorderPending   bool
 }
 
 func NewImageGallery(attachments []domain.Attachment, thumbnails map[int64]image.Image, open func(domain.Attachment), reorder func([]int64)) *ImageGallery {
@@ -400,20 +402,20 @@ func (g *ImageGallery) animateTiles(destinations map[*imageTile]fyne.Position, d
 			tile.object.Move(destination)
 			continue
 		}
-		tile := tile
-		start := start
-		destination := destination
+		currentTile := tile
+		startPos := start
+		endPos := destination
 		var animation *fyne.Animation
 		animation = fyne.NewAnimation(duration, func(progress float32) {
-			x := start.X + (destination.X-start.X)*progress
-			y := start.Y + (destination.Y-start.Y)*progress
-			tile.object.Move(fyne.NewPos(x, y))
-			if progress >= 1 && g.reflowAnimations[tile] == animation {
-				delete(g.reflowAnimations, tile)
+			x := startPos.X + (endPos.X-startPos.X)*progress
+			y := startPos.Y + (endPos.Y-startPos.Y)*progress
+			currentTile.object.Move(fyne.NewPos(x, y))
+			if progress >= 1 && g.reflowAnimations[currentTile] == animation {
+				delete(g.reflowAnimations, currentTile)
 			}
 		})
 		animation.Curve = fyne.AnimationEaseOut
-		g.reflowAnimations[tile] = animation
+		g.reflowAnimations[currentTile] = animation
 		animation.Start()
 	}
 }

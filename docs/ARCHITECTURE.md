@@ -40,9 +40,15 @@ instead of disappearing. `Rails.OnLeftCompactChanged` explicitly switches the
 sidebar between labeled and icon-only modes, preventing clipped labels inside
 the compact rail. The header rail control swaps its themed SVG glyph with the
 same state change, so manual and automatic compaction stay visually consistent.
-On Windows the client is sized from the monitor work area
-before `Show`; there is no post-show native maximize, so the first painted frame
-is already screen-fitted and does not visibly jump from a small window.
+On Windows the pre-show fallback size is calculated from the work area using
+Windows system DPI plus Fyne's user scale. This intentionally does not use
+`Canvas.Scale()` because a Fyne canvas is still `1.0` until GLFW creates the
+native window. `Desktop.Show()` scopes GLFW's `Maximized` window-creation hint to
+the single NoteHub window. Fyne creates the native window while it is hidden,
+therefore the first visible frame is already maximized to the Windows work area;
+there is no visible normal-window -> maximized transition. The process-wide hint
+is restored immediately after creation so later windows are unaffected. Windows
+remains authoritative for taskbar/title-bar/border/per-monitor-DPI bounds.
 
 Timeline uses 40-note keyset pages. Calendar boundaries use local calendar
 arithmetic, including DST. Search has a 300 ms debounce. Image previews are

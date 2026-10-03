@@ -93,10 +93,14 @@ hit target but are visually transparent, so panel spacing replaces permanent
 divider lines. Narrow windows keep a compact navigation rail and temporarily
 hide the right panel when necessary without changing saved preferences.
 
-On Windows, NoteHub sizes the native client to the monitor work area *before*
-the first visible frame. There is no delayed post-show maximize call, which
-removes the small-window-to-maximized startup flash while retaining a small
-DPI safety margin so borders do not spill outside the usable desktop.
+On Windows, NoteHub computes its fallback client size from the Windows work
+area and system DPI rather than the not-yet-initialized Fyne canvas scale. Before
+Fyne creates the native GLFW window, NoteHub temporarily enables GLFW's
+`Maximized` creation hint. Fyne creates desktop windows hidden first, so the
+first visible frame is already maximized to the Windows work area instead of
+showing a normal frame and maximizing it one frame later. The hint is reset
+immediately after `Show()` so later windows keep their normal default. Windows
+therefore owns the taskbar, title-bar, border and DPI fit without startup flash.
 
 Image gallery tiles preserve the source aspect ratio with `ImageFillContain`.
 Gallery rows use the entire note width, choose their column count from the

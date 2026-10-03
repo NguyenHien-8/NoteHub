@@ -1,27 +1,27 @@
 package platform
 
-import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/driver"
-)
+import "sync"
 
-// MaximizeWindow requests the normal OS maximized state after Show has created
-// the native window. Windows chooses the monitor work area, preserving its
-// taskbar, title bar and DPI behavior. Other drivers keep the fitted fallback.
-func MaximizeWindow(window fyne.Window) bool {
-	return maximizeWindow(window, maximizeNativeWindow)
+// PrepareWindowForShow configures the native desktop window's initial state
+// before Fyne creates its GLFW window. The returned function must be called
+// immediately after Window.Show so the process-wide GLFW creation hint does
+// not leak into any later windows.
+//
+// On Windows this requests a maximized window at creation time. This is
+// intentionally different from maximizing an already-visible HWND: the first
+// visible frame is already fitted to the Windows work area, eliminating the
+// normal-window -> maximized flash during startup.
+func PrepareWindowForShow() func() {
+	return prepareWindowForShow()
 }
 
-func maximizeWindow(window fyne.Window, maximize func(uintptr) bool) bool {
-	native, ok := window.(driver.NativeWindow)
-	if !ok {
-		return false
+// prepareMaximizedCreationHint makes a process-wide creation hint scoped to a
+// single window creation. Keeping the restore idempotent makes it safe to use
+// with defer even if startup code returns early in the future.
+func prepareMaximizedCreationHint(set func(bool)) func() {
+	set(true)
+	var once sync.Once
+	return func() {
+		once.Do(func() { set(false) })
 	}
-	maximized := false
-	native.RunNative(func(context any) {
-		if windows, ok := context.(driver.WindowsWindowContext); ok && windows.HWND != 0 {
-			maximized = maximize(windows.HWND)
-		}
-	})
-	return maximized
 }

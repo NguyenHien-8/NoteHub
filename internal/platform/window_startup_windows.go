@@ -2,13 +2,20 @@
 
 package platform
 
-import "syscall"
+import "github.com/go-gl/glfw/v3.3/glfw"
 
-var showWindowAsync = syscall.NewLazyDLL("user32.dll").NewProc("ShowWindowAsync")
-
-func maximizeNativeWindow(handle uintptr) bool {
-	const swMaximize = 3
-	// Queue on the native window's owning thread; do not block Fyne's event loop.
-	result, _, _ := showWindowAsync.Call(handle, swMaximize)
-	return result != 0
+func prepareWindowForShow() func() {
+	return prepareMaximizedCreationHint(func(maximized bool) {
+		if maximized {
+			// Fyne creates desktop windows hidden first. Asking GLFW to create the
+			// window maximized means the first frame that becomes visible already
+			// uses Windows' maximized work-area bounds (taskbar, frame and DPI
+			// included), instead of showing a normal frame and maximizing it later.
+			glfw.WindowHint(glfw.Maximized, glfw.True)
+			return
+		}
+		// Window hints are process-wide. Reset immediately after Fyne has created
+		// the NoteHub window so any future native window keeps its normal default.
+		glfw.WindowHint(glfw.Maximized, glfw.False)
+	})
 }

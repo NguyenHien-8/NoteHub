@@ -315,10 +315,14 @@ bằng một allowlist inline HTML nhỏ và `markdown_view.go` render cục b�
 URL ngoài. `dialogs/memo.go` dùng editor này cho Edit Note và dùng MarkdownView
 cho hộp thoại xem ghi chú.
 
-Startup Windows dùng `platform.InitialWindowSize()` để lấy work area + DPI và
-không giới hạn trần 1240×780 nữa. `Desktop.Show()` chỉ show cửa sổ đã fit sẵn,
-không gọi maximize sau khi cửa sổ đã hiện nên loại bỏ hiệu ứng mở cửa sổ nhỏ rồi
-phóng lớn. `Rails.OnLeftCompactChanged` nối trực tiếp với `Sidebar.SetCompact`,
+Startup Windows dùng `platform.InitialWindowSize()` với Windows system DPI +
+Fyne user scale; tuyệt đối không lấy `Canvas.Scale()` trước `Show` vì lúc đó Fyne
+vẫn trả 1.0. Trước khi Fyne tạo native window, `Desktop.Show()` tạm bật GLFW
+`Maximized` creation hint. Fyne tạo cửa sổ desktop ở trạng thái hidden, vì vậy
+frame đầu tiên nhìn thấy đã được Windows maximize đúng work area thay vì hiện một
+cửa sổ thường rồi mới phóng lớn. Hint global được reset ngay sau `Show()` để không
+ảnh hưởng các window về sau. Windows vẫn tự quyết định taskbar, title bar, border
+và per-monitor DPI. `Rails.OnLeftCompactChanged` nối trực tiếp với `Sidebar.SetCompact`,
 đảm bảo rail thu gọn chỉ còn icon Home/Calendar/Search/Attachments/Tags/Settings/
 My Tags thay vì cắt nửa text. Nút toggle ở header dùng SVG theo theme và đổi glyph
 theo trạng thái expanded/compact để phản hồi trực quan giống activity bar.

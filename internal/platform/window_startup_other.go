@@ -2,4 +2,4 @@
 
 package platform
 
-func maximizeNativeWindow(uintptr) bool { return false }
+func prepareWindowForShow() func() { return func() {} }

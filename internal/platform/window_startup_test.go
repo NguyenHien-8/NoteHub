@@ -1,46 +1,23 @@
 package platform
 
 import (
+	"reflect"
 	"testing"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/driver"
-	"fyne.io/fyne/v2/test"
 )
 
-type nativeStartupWindow struct {
-	fyne.Window
-	context any
-}
+func TestPrepareMaximizedCreationHintIsScopedToOneWindow(t *testing.T) {
+	var states []bool
+	restore := prepareMaximizedCreationHint(func(maximized bool) {
+		states = append(states, maximized)
+	})
 
-func (w nativeStartupWindow) RunNative(f func(any)) { f(w.context) }
+	if !reflect.DeepEqual(states, []bool{true}) {
+		t.Fatalf("creation hint not enabled before show: %v", states)
+	}
 
-func TestMaximizeRequiresLiveWindowsHandle(t *testing.T) {
-	a := test.NewApp()
-	defer a.Quit()
-	w := a.NewWindow("startup")
-	for _, tc := range []struct {
-		name   string
-		window fyne.Window
-		want   bool
-	}{
-		{"headless", w, false},
-		{"other platform", nativeStartupWindow{w, driver.UnknownContext{}}, false},
-		{"not shown", nativeStartupWindow{w, driver.WindowsWindowContext{}}, false},
-		{"shown", nativeStartupWindow{w, driver.WindowsWindowContext{HWND: 42}}, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			called := false
-			got := maximizeWindow(tc.window, func(handle uintptr) bool {
-				called = true
-				if handle != 42 {
-					t.Fatalf("wrong native window: %d", handle)
-				}
-				return true
-			})
-			if got != tc.want || called != tc.want {
-				t.Fatalf("maximize=%v native call=%v, want %v", got, called, tc.want)
-			}
-		})
+	restore()
+	restore() // idempotent: a defer + explicit cleanup must not flip it twice.
+	if !reflect.DeepEqual(states, []bool{true, false}) {
+		t.Fatalf("creation hint not restored exactly once: %v", states)
 	}
 }
