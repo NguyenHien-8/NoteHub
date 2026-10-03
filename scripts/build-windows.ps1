@@ -1,73 +1,68 @@
+[CmdletBinding()]
 param(
-    [string]$QtDir = $env:QT_ROOT,
-    [string]$Version = "0.3.0"
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string]$Version = '0.2.0',
+    [string]$OutputDirectory = '',
+    [string]$Compiler = ''
 )
 
-$ErrorActionPreference = "Stop"
-$Root = Split-Path -Parent $PSScriptRoot
-Set-Location $Root
-$Dist = Join-Path $Root "dist/windows"
-$Build = Join-Path $Root "build/qt-windows"
-New-Item -ItemType Directory -Force -Path $Dist | Out-Null
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+$repoRoot = Split-Path -Parent $PSScriptRoot
+if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+    throw 'Go is required. Install Go and put go.exe on PATH.'
+}
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    throw 'Run this script on Windows with a native MinGW-w64 GCC toolchain.'
+}
+if ($env:GOOS -and $env:GOOS -ne 'windows') {
+    throw "GOOS=$env:GOOS conflicts with a native Windows build. Clear GOOS first."
+}
 
-Write-Host "[1/4] Building Go backend..." -ForegroundColor Cyan
-$ldflags = "-s -w -X main.version=$Version"
-go build -trimpath -ldflags $ldflags -o (Join-Path $Dist "notehub-backend.exe") ./cmd/notehub-backend
-
-if (-not $QtDir) {
-    $candidates = @()
-    if (Test-Path "C:\Qt") {
-        $candidates += Get-ChildItem "C:\Qt" -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^6\.' } |
-            Sort-Object Name -Descending |
-            ForEach-Object {
-                Join-Path $_.FullName "msvc2022_64"
-                Join-Path $_.FullName "msvc2022_arm64"
-                Join-Path $_.FullName "mingw_64"
-            }
+# Resolve one compiler executable, including paths containing spaces. Put its
+# directory on PATH so cgo does not have to parse an unquoted full CC path.
+if (-not $Compiler -and $env:CC) { $Compiler = $env:CC }
+if (-not $Compiler) {
+    $gccCommand = Get-Command gcc -ErrorAction SilentlyContinue
+    if ($gccCommand) { $Compiler = $gccCommand.Source }
+}
+if (-not $Compiler) {
+    foreach ($candidate in @(
+        'C:\msys64\ucrt64\bin\gcc.exe',
+        'C:\msys64\mingw64\bin\gcc.exe',
+        'C:\mingw64\bin\gcc.exe',
+        'C:\Qt\Tools\mingw1310_64\bin\gcc.exe'
+    )) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $Compiler = $candidate
+            break
+        }
     }
-    $QtDir = $candidates | Where-Object { Test-Path (Join-Path $_ "bin\windeployqt.exe") } | Select-Object -First 1
 }
-if (-not $QtDir) {
-    throw "Qt 6 was not found. Set QT_ROOT, e.g. C:\Qt\6.11.2\msvc2022_64"
+if (-not $Compiler) {
+    throw 'MinGW-w64 GCC is required. Add gcc.exe to PATH or pass -Compiler C:\path\to\gcc.exe.'
 }
-$QtDir = (Resolve-Path $QtDir).Path
-Write-Host "Qt: $QtDir"
+$compilerCommand = Get-Command $Compiler -ErrorAction SilentlyContinue
+if (-not $compilerCommand) { throw "Compiler executable not found: $Compiler" }
+$compilerPath = $compilerCommand.Source
+$env:PATH = "$(Split-Path -Parent $compilerPath);$env:PATH"
+$env:CC = Split-Path -Leaf $compilerPath
+$env:CGO_ENABLED = '1'
+& $compilerPath --version
+if ($LASTEXITCODE -ne 0) { throw 'The C compiler could not run.' }
 
-$generatorArgs = @()
-if ($QtDir -match 'msvc2022_arm64') {
-    $generatorArgs = @("-G", "Visual Studio 17 2022", "-A", "ARM64")
-} elseif ($QtDir -match 'msvc') {
-    $generatorArgs = @("-G", "Visual Studio 17 2022", "-A", "x64")
-} elseif ($QtDir -match 'mingw') {
-    $ninja = Get-Command ninja.exe -ErrorAction SilentlyContinue
-    if (-not $ninja -and (Test-Path "C:\Qt\Tools\Ninja\ninja.exe")) {
-        $env:PATH = "C:\Qt\Tools\Ninja;$env:PATH"
-        $ninja = Get-Command ninja.exe -ErrorAction SilentlyContinue
-    }
-    $mingwRoot = Get-ChildItem "C:\Qt\Tools" -Directory -Filter "mingw*" -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
-    if ($mingwRoot) { $env:PATH = "$(Join-Path $mingwRoot.FullName 'bin');$env:PATH" }
-    if ($ninja) { $generatorArgs = @("-G", "Ninja") }
-    else { $generatorArgs = @("-G", "MinGW Makefiles") }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot 'dist/windows' }
+if (-not [IO.Path]::IsPathRooted($OutputDirectory)) {
+    $OutputDirectory = Join-Path $repoRoot $OutputDirectory
 }
-
-Write-Host "[2/4] Configuring Qt frontend..." -ForegroundColor Cyan
-cmake -S $Root -B $Build @generatorArgs "-DCMAKE_PREFIX_PATH=$QtDir" "-DCMAKE_BUILD_TYPE=Release"
-
-Write-Host "[3/4] Building Qt frontend..." -ForegroundColor Cyan
-cmake --build $Build --config Release --parallel
-$exeCandidates = @(
-    (Join-Path $Build "frontend/Release/NoteHub.exe"),
-    (Join-Path $Build "frontend/NoteHub.exe"),
-    (Join-Path $Build "Release/NoteHub.exe")
-)
-$GuiExe = $exeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $GuiExe) { throw "NoteHub.exe was not found under $Build" }
-Copy-Item $GuiExe (Join-Path $Dist "NoteHub.exe") -Force
-
-Write-Host "[4/4] Deploying Qt runtime..." -ForegroundColor Cyan
-$Deploy = Join-Path $QtDir "bin/windeployqt.exe"
-& $Deploy --release --no-translations --compiler-runtime (Join-Path $Dist "NoteHub.exe")
-Copy-Item (Join-Path $Root "assets/icons/NoteHub.png") (Join-Path $Dist "NoteHub.png") -Force
-
-Write-Host "Done: $Dist\NoteHub.exe" -ForegroundColor Green
+$null = New-Item -ItemType Directory -Force -Path $OutputDirectory
+$outputPath = Join-Path $OutputDirectory 'NoteHub.exe'
+Push-Location -LiteralPath $repoRoot
+try {
+    & go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Version" -o $outputPath ./cmd/notehub
+    if ($LASTEXITCODE -ne 0) { throw "NoteHub Windows build failed (exit $LASTEXITCODE)." }
+    if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Build did not produce NoteHub.exe.' }
+    Write-Host "Built $outputPath (version $Version)"
+} finally {
+    Pop-Location
+}
