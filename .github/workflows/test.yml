@@ -10,15 +10,19 @@ permissions:
 
 env:
   NOTEHUB_VERSION: '0.3.0'
-  QT_VERSION: '6.8.3'
+  # Qt 6.8.3 links the removed AGL framework on macOS 26 / Xcode 26.
+  # Qt 6.8.4 contains the relevant Tahoe fix.
+  QT_VERSION: '6.8.4'
 
 jobs:
   quality:
     name: Go quality checks
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
@@ -39,7 +43,10 @@ jobs:
         shell: bash
         run: |
           go mod tidy
-          git diff --exit-code -- go.mod go.sum
+          if ! git diff --exit-code -- go.mod go.sum; then
+            echo "::error title=Go module files are not tidy::Run 'go mod tidy' and commit go.mod/go.sum."
+            exit 1
+          fi
 
       - name: Test Go backend
         shell: bash
@@ -63,7 +70,8 @@ jobs:
     name: Qt desktop (${{ matrix.os }})
     needs: quality
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 50
+
     strategy:
       fail-fast: false
       matrix:
@@ -77,27 +85,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Install Qt on Windows
-        if: runner.os == 'Windows'
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: ${{ env.QT_VERSION }}
-          arch: win64_msvc2022_64
-          cache: true
-
-      - name: Install Qt on macOS/Linux
-        if: runner.os != 'Windows'
+      - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
           cache: true
           install-deps: true
+          arch: ${{ runner.os == 'Windows' && 'win64_msvc2022_64' || '' }}
 
       - name: Configure Qt desktop (Windows)
         if: runner.os == 'Windows'
@@ -130,23 +131,42 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          cmake --install build/qt-ci --config Release --prefix build/stage
-          if (-not (Test-Path build/stage/NoteHub.exe)) { throw "NoteHub.exe was not installed." }
-          if (-not (Test-Path build/stage/notehub-core.exe)) { throw "notehub-core.exe was not installed." }
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'build\stage'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+          # Use an absolute install prefix. Qt's deploy script rejects a relative
+          # prefix because it would create a relative qt.conf path.
+          cmake --install build/qt-ci --config Release --prefix "$stage"
+
+          if (-not (Test-Path (Join-Path $stage 'NoteHub.exe'))) {
+            throw "NoteHub.exe was not installed."
+          }
+          if (-not (Test-Path (Join-Path $stage 'notehub-core.exe'))) {
+            throw "notehub-core.exe was not installed."
+          }
 
       - name: Verify Linux install layout
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          cmake --install build/qt-ci --prefix build/stage
-          test -x build/stage/NoteHub
-          test -x build/stage/notehub-core
+          stage="$GITHUB_WORKSPACE/build/stage"
+          mkdir -p "$stage"
+
+          # Must be absolute for qt_generate_deploy_app_script().
+          cmake --install build/qt-ci --prefix "$stage"
+
+          test -x "$stage/NoteHub"
+          test -x "$stage/notehub-core"
 
       - name: Verify macOS install layout
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          cmake --install build/qt-ci --prefix build/stage
-          test -d build/stage/NoteHub.app
-          test -x build/stage/NoteHub.app/Contents/MacOS/NoteHub
-          test -x build/stage/NoteHub.app/Contents/MacOS/notehub-core
+          stage="$GITHUB_WORKSPACE/build/stage"
+          mkdir -p "$stage"
+
+          cmake --install build/qt-ci --prefix "$stage"
+
+          test -d "$stage/NoteHub.app"
+          test -x "$stage/NoteHub.app/Contents/MacOS/NoteHub"
+          test -x "$stage/NoteHub.app/Contents/MacOS/notehub-core"
