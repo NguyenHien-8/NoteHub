@@ -17,6 +17,9 @@ func boundedText(value string, limit int) string {
 }
 
 func memoPreview(content string) (string, string) {
+	// Cards stay compact even when the note uses Markdown/inline rich-text
+	// formatting. The full formatting is rendered in the note dialog/preview.
+	content = MarkdownPlainText(content)
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	for i, line := range lines {
 		if title := strings.TrimSpace(line); title != "" {

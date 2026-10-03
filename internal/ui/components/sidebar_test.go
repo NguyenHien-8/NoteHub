@@ -21,11 +21,18 @@ func TestSidebarCompactNavigationPreservesActionsAndSelection(t *testing.T) {
 		if button.Text != "" || button.Icon == nil || !button.Visible() || button.Hint == "" {
 			t.Fatalf("compact action %s lost its icon or label", id)
 		}
+		if themed := s.buttonThemes[id]; themed == nil || themed.MinSize().Width > 44 {
+			t.Fatalf("compact action %s is still too wide for the icon rail: %v", id, themed.MinSize())
+		}
 		test.Tap(button)
-		if navigated != id { t.Fatalf("%s navigated to %s", id, navigated) }
+		if navigated != id {
+			t.Fatalf("%s navigated to %s", id, navigated)
+		}
 	}
 	s.SetSelected("settings")
-	if s.buttons["settings"].Importance != widget.HighImportance { t.Fatal("compact selection is missing") }
+	if s.buttons["settings"].Importance != widget.HighImportance {
+		t.Fatal("compact selection is missing")
+	}
 	if !s.compactTags.Visible() || s.scroll.Content.MinSize().Height <= s.scroll.Size().Height {
 		t.Fatal("short sidebar must scroll all navigation actions including My Tags")
 	}
@@ -47,14 +54,22 @@ func TestCompactMyTagsUsesCurrentTagsAndAddAction(t *testing.T) {
 	s.SetCompact(true)
 	s.SetTags([]domain.TagCount{{Tag: "Research", Count: 3}})
 	test.Tap(s.compactTags)
-	if s.tagPopup == nil || !s.tagPopup.Visible() { t.Fatal("My Tags did not open") }
+	if s.tagPopup == nil || !s.tagPopup.Visible() {
+		t.Fatal("My Tags did not open")
+	}
 	rows := s.popupTags.Objects[0].(*fyne.Container)
 	row := rows.Objects[0].(*fyne.Container)
 	for _, object := range row.Objects {
-		if button, ok := object.(*widget.Button); ok { test.Tap(button) }
+		if button, ok := object.(*widget.Button); ok {
+			test.Tap(button)
+		}
 	}
-	if selected != "Research" || s.tagPopup.Visible() { t.Fatal("tag selection did not filter and close the popup") }
+	if selected != "Research" || s.tagPopup.Visible() {
+		t.Fatal("tag selection did not filter and close the popup")
+	}
 	test.Tap(s.compactTags)
 	test.Tap(s.popupAdd)
-	if !added || s.tagPopup.Visible() { t.Fatal("compact Add Tag action did not run and close") }
+	if !added || s.tagPopup.Visible() {
+		t.Fatal("compact Add Tag action did not run and close")
+	}
 }

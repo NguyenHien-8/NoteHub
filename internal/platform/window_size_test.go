@@ -19,11 +19,16 @@ func TestWindowClientSizeFitsScaledWorkArea(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			size := fitClientSize(tc.work, tc.chrome, tc.scale)
-			if size.Width*tc.scale+tc.chrome.Width > tc.work.Width-16 || size.Height*tc.scale+tc.chrome.Height > tc.work.Height-16 {
+			if size.Width*tc.scale+tc.chrome.Width > tc.work.Width-windowSafetyMargin || size.Height*tc.scale+tc.chrome.Height > tc.work.Height-windowSafetyMargin {
 				t.Fatalf("logical size %v at scale %v overflows work area %v with chrome %v", size, tc.scale, tc.work, tc.chrome)
 			}
-			if size.Width > 1240 || size.Height > 780 || size.Width < 760 || size.Height < 400 {
-				t.Fatalf("unusable or unnecessarily oversized initial size: %v", size)
+			if size.Width < 640 || size.Height < 300 {
+				t.Fatalf("unusable initial size: %v", size)
+			}
+			expectedWidth := (tc.work.Width - windowSafetyMargin - tc.chrome.Width) / tc.scale
+			expectedHeight := (tc.work.Height - windowSafetyMargin - tc.chrome.Height) / tc.scale
+			if size.Width != expectedWidth || size.Height != expectedHeight {
+				t.Fatalf("first frame should fill the usable work area: got %v want %.2fx%.2f", size, expectedWidth, expectedHeight)
 			}
 		})
 	}
@@ -41,7 +46,7 @@ func TestWindowBoundsCenterOnNegativeOriginMonitor(t *testing.T) {
 }
 
 func TestWindowClientSizeHandlesInvalidScale(t *testing.T) {
-	if got := fitClientSize(fyne.NewSize(900, 700), fyne.NewSize(16, 40), 0); got != fyne.NewSize(868, 644) {
+	if got := fitClientSize(fyne.NewSize(900, 700), fyne.NewSize(16, 40), 0); got != fyne.NewSize(876, 652) {
 		t.Fatalf("invalid scale fallback: %v", got)
 	}
 }

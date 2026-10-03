@@ -88,3 +88,19 @@ func TestMarkdownImportRejectsBinaryAndOversizedInput(t *testing.T) {
 		t.Fatalf("normalization: %q, %v", got, err)
 	}
 }
+
+func TestNoteEditorFormattingWithoutSelectionArmsStyleAtCursor(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	ed := NewNoteEditor(nil)
+	ed.SetText("abc")
+	ed.Entry.CursorRow, ed.Entry.CursorColumn = 0, 3
+	ed.Entry.Refresh()
+	ed.Format("bold", "")
+	if ed.Entry.Text != "abc****" {
+		t.Fatalf("bold markers = %q", ed.Entry.Text)
+	}
+	if ed.Entry.CursorTextOffset() != 5 {
+		t.Fatalf("cursor should be between bold markers, got %d", ed.Entry.CursorTextOffset())
+	}
+}

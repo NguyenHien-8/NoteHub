@@ -8,8 +8,8 @@ on your computer in SQLite and the application data directory.
 ## Start the desktop app
 
 For a built package, open `NoteHub.exe` on Windows, `NoteHub.app` on macOS, or
-run `./NoteHub` on Linux. On Windows the app opens maximized, using the monitor's
-work area while keeping the title bar and taskbar available. The logo is
+run `./NoteHub` on Linux. On Windows the first visible frame is already fitted
+to the monitor's usable work area while keeping the title bar and taskbar available. The logo is
 embedded, so launching from another working directory works.
 
 To build from source, install Go and the native C/OpenGL development tools for
@@ -49,11 +49,12 @@ awaiting CI verification.
 - **Note menu:** edit, favorite, share, or delete a note. Delete asks for
   confirmation. Edits use revisions; a conflict requires reloading instead of
   silently overwriting another change.
-- **Edit note:** use the formatting toolbar for bold, italic, underline,
-  strikethrough, font size, text color, highlight, lists and indentation. The
-  Markdown source and preview tabs let you edit and check the result. Import
-  and export UTF-8 `.md` files from the editor; importing changes the draft,
-  and **Save** commits it to the note. Undo/redo also covers toolbar edits.
+- **Edit note:** use the icon-assisted formatting toolbar for bold, italic,
+  underline, strikethrough, font size, text color, highlight, clear formatting,
+  bullets, numbering, indent and outdent. Ordinary text and Markdown share one
+  editor, while **Preview** renders the saved rich-text/Markdown result. Import
+  and export UTF-8 `.md` files from the editor; importing changes only the
+  draft, and **Save** commits it to the note. Undo/redo also covers toolbar edits.
 - **Calendar:** select a day to view its notes. Clear the date filter to return
   to all notes. The small calendar and quick filters provide the same navigation
   from Home.
@@ -85,10 +86,17 @@ The desktop shell uses three rounded panels: a softly tinted left navigation
 panel, a neutral workspace, and a softly tinted right information panel. The
 left and right panels can be resized or collapsed. The collapsed left panel
 keeps Home, Calendar, Search, Attachments, Tags, Settings and My Tags accessible
-as icons, with labels on hover/focus. Resize handles keep a wide
+as icon-only actions instead of clipping their labels. The header toggle also
+switches between expanded/compact rail glyphs so the current state is visible.
+Resize handles keep a wide
 hit target but are visually transparent, so panel spacing replaces permanent
 divider lines. Narrow windows keep a compact navigation rail and temporarily
 hide the right panel when necessary without changing saved preferences.
+
+On Windows, NoteHub sizes the native client to the monitor work area *before*
+the first visible frame. There is no delayed post-show maximize call, which
+removes the small-window-to-maximized startup flash while retaining a small
+DPI safety margin so borders do not spill outside the usable desktop.
 
 Image gallery tiles preserve the source aspect ratio with `ImageFillContain`.
 Gallery rows use the entire note width, choose their column count from the
@@ -96,8 +104,11 @@ available space and allocate tile widths according to image aspect ratios.
 Narrow windows use a single column. Row heights are bounded, images are never
 cropped, and the note height is remeasured when the window or rails change.
 Dragging displays a floating preview, dims the original, and marks the drop
-position; ordering is saved only on release over another image. Home/Edit
-previews are generated off the UI thread at up to 640 × 420 pixels, then cached
+position. Neighboring tiles animate into their prospective slots as the pointer
+crosses a target, so the final order is visible before release. The drop applies
+an optimistic local order, then persists it; a failed write reloads database
+truth. Home/Edit previews are generated off the UI thread at up to 640 × 420
+pixels, then cached
 with a bounded LRU-style usage map. The larger preview budget avoids blurry
 upscaling while keeping decoded image memory bounded.
 

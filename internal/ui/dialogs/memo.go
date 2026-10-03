@@ -51,8 +51,7 @@ func (m *Manager) ShowMemo(id int64) {
 			return
 		}
 		note := data.note
-		text := widget.NewRichTextWithText(note.Content)
-		text.Wrapping = fyne.TextWrapWord
+		text := components.NewMarkdownView(note.Content)
 		content := container.NewVBox(text)
 		if countImages(note.Attachments) > 0 {
 			gallery := components.NewImageGallery(note.Attachments, data.thumbs, m.OpenAttachment, nil)
@@ -87,9 +86,9 @@ func (m *Manager) EditMemo(note domain.Memo) {
 		}
 		current := data.note
 		thumbs := data.thumbs
-		entry := widget.NewMultiLineEntry()
-		entry.Wrapping = fyne.TextWrapWord
-		entry.SetText(current.Content)
+		editor := components.NewNoteEditor(m.Window)
+		editor.SetText(current.Content)
+		entry := editor.Entry
 		m.drafts[entry] = current.Content
 		status := widget.NewLabel("")
 		status.Wrapping = fyne.TextWrapWord
@@ -119,6 +118,9 @@ func (m *Manager) EditMemo(note domain.Memo) {
 				}
 				if err != nil {
 					status.SetText("Image order was not changed.")
+					// Gallery reorders optimistically while dragging. Restore the
+					// last saved snapshot if persistence fails.
+					gallery.SetAttachments(current.Attachments, thumbs)
 					m.Error(err)
 					return
 				}
@@ -130,6 +132,7 @@ func (m *Manager) EditMemo(note domain.Memo) {
 				}
 			})
 		})
+		gallery.SetReorderGuard(func() bool { return !busy && !attachmentBusy && !closed })
 		galleryLabel := widget.NewLabel("Images · drag to reorder · delete to remove")
 		galleryLabel.Importance = widget.LowImportance
 		galleryScroll := container.NewVScroll(gallery)
@@ -199,7 +202,7 @@ func (m *Manager) EditMemo(note domain.Memo) {
 			save.Disable()
 			reload.Disable()
 			cancel.Disable()
-			entry.Disable()
+			editor.SetBusy(true)
 			content, revision, id := entry.Text, current.Revision, current.ID
 			work.Run(m.Jobs, func(ctx context.Context) (*domain.Memo, error) {
 				return m.Backend.Memos.Update(ctx, id, revision, content)
@@ -214,7 +217,7 @@ func (m *Manager) EditMemo(note domain.Memo) {
 				save.Enable()
 				reload.Enable()
 				cancel.Enable()
-				entry.Enable()
+				editor.SetBusy(false)
 				if errors.Is(err, domain.ErrConflict) {
 					status.SetText("Ghi chú đã được thay đổi ở nơi khác. Vui lòng tải lại. Your edits are kept here; copy them before reloading.")
 					return
@@ -242,7 +245,7 @@ func (m *Manager) EditMemo(note domain.Memo) {
 				save.Disable()
 				reload.Disable()
 				cancel.Disable()
-				entry.Disable()
+				editor.SetBusy(true)
 				id := current.ID
 				work.Run(m.Jobs, func(ctx context.Context) (memoDialogData, error) { return m.loadMemoDialogData(ctx, id) }, func(latest memoDialogData, err error) {
 					if closed {
@@ -252,14 +255,14 @@ func (m *Manager) EditMemo(note domain.Memo) {
 					save.Enable()
 					reload.Enable()
 					cancel.Enable()
-					entry.Enable()
+					editor.SetBusy(false)
 					if err != nil {
 						m.Error(err)
 						return
 					}
 					current = latest.note
 					thumbs = latest.thumbs
-					entry.SetText(current.Content)
+					editor.SetText(current.Content)
 					m.drafts[entry] = current.Content
 					gallery.SetAttachments(current.Attachments, thumbs)
 					refreshGalleryVisibility()
@@ -268,11 +271,15 @@ func (m *Manager) EditMemo(note domain.Memo) {
 			}, m.Window)
 		})
 
-		center := container.NewBorder(nil, gallerySection, nil, nil, entry)
+		center := container.NewBorder(nil, gallerySection, nil, nil, editor.Object)
 		body := container.NewBorder(nil, container.NewVBox(status, container.NewHBox(reload, cancel, save)), nil, nil, center)
 		d = dialog.NewCustomWithoutButtons("Edit note", body, m.Window)
-		d.SetOnClosed(func() { closed = true; delete(m.drafts, entry) })
-		d.Resize(fitDialogSize(m.Window, fyne.NewSize(720, 600)))
+		d.SetOnClosed(func() {
+			closed = true
+			editor.Close()
+			delete(m.drafts, entry)
+		})
+		d.Resize(fitDialogSize(m.Window, fyne.NewSize(980, 720)))
 		d.Show()
 		m.Window.Canvas().Focus(entry)
 	})

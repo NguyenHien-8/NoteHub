@@ -15,25 +15,27 @@ import (
 )
 
 type Sidebar struct {
-	Object   fyne.CanvasObject
-	menu     *fyne.Container
-	tags     *fyne.Container
-	scroll   *container.Scroll
-	heading  fyne.CanvasObject
-	compactTags *HintButton
-	buttons  map[string]*HintButton
-	compact  bool
-	onTag    func(string)
-	onAddTag func()
-	selected string
-	tagData  []domain.TagCount
-	tagPopup *widget.PopUp
-	popupTags *fyne.Container
-	popupAdd *widget.Button
+	Object          fyne.CanvasObject
+	menu            *fyne.Container
+	tags            *fyne.Container
+	scroll          *container.Scroll
+	heading         fyne.CanvasObject
+	compactTags     *HintButton
+	compactTagsWrap *container.ThemeOverride
+	buttons         map[string]*HintButton
+	buttonThemes    map[string]*container.ThemeOverride
+	compact         bool
+	onTag           func(string)
+	onAddTag        func()
+	selected        string
+	tagData         []domain.TagCount
+	tagPopup        *widget.PopUp
+	popupTags       *fyne.Container
+	popupAdd        *widget.Button
 }
 
 func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *Sidebar {
-	s := &Sidebar{menu: container.NewVBox(), tags: container.NewStack(sidebarTags(nil, onTag)), buttons: map[string]*HintButton{}, onTag: onTag, onAddTag: onAddTag}
+	s := &Sidebar{menu: container.NewVBox(), tags: container.NewStack(sidebarTags(nil, onTag)), buttons: map[string]*HintButton{}, buttonThemes: map[string]*container.ThemeOverride{}, onTag: onTag, onAddTag: onAddTag}
 	for _, item := range []struct {
 		name string
 		icon fyne.Resource
@@ -51,10 +53,11 @@ func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *S
 		button.Importance = widget.LowImportance
 		s.buttons[id] = button
 		// Keep each button in one stable theme container to avoid rebuilding
-		// the menu and its theme scopes on every navigation.
-		s.menu.Add(container.NewThemeOverride(button, scopedTheme{
-			background: color.NRGBA{R: 234, G: 243, B: 255, A: 255}, foreground: primaryBlue,
-		}))
+		// the menu and its theme scopes on every navigation. Compact mode swaps
+		// only the theme padding so a 64 px rail never clips the icon.
+		themed := container.NewThemeOverride(button, sidebarButtonTheme(false))
+		s.buttonThemes[id] = themed
+		s.menu.Add(themed)
 	}
 	add := widget.NewButtonWithIcon("", theme.ContentAddIcon(), onAddTag)
 	add.Importance = widget.LowImportance
@@ -66,22 +69,36 @@ func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *S
 	s.compactTags.SetText("")
 	s.compactTags.Importance = widget.LowImportance
 	s.compactTags.Hide()
-	content := container.New(layout.NewCustomPaddedVBoxLayout(12), s.menu, widget.NewSeparator(), s.heading, s.tags, s.compactTags)
+	s.compactTagsWrap = container.NewThemeOverride(s.compactTags, sidebarButtonTheme(true))
+	s.compactTagsWrap.Hide()
+	content := container.New(layout.NewCustomPaddedVBoxLayout(12), s.menu, widget.NewSeparator(), s.heading, s.tags, s.compactTagsWrap)
 	s.scroll = container.NewVScroll(content)
 	s.Object = s.scroll
 	s.SetSelected("home")
 	return s
 }
 
+func sidebarButtonTheme(compact bool) scopedTheme {
+	return scopedTheme{
+		background: color.NRGBA{R: 234, G: 243, B: 255, A: 255},
+		foreground: primaryBlue,
+		compact:    compact,
+	}
+}
+
 func (s *Sidebar) SetHintLayer(hints *HintLayer) {
-	for _, button := range s.buttons { button.SetHintLayer(hints) }
+	for _, button := range s.buttons {
+		button.SetHintLayer(hints)
+	}
 	s.compactTags.SetHintLayer(hints)
 }
 
 func (s *Sidebar) SetCompact(compact bool) {
-	if s.compact == compact { return }
+	if s.compact == compact {
+		return
+	}
 	s.compact = compact
-	for _, button := range s.buttons {
+	for id, button := range s.buttons {
 		button.hideHint()
 		if compact {
 			button.Alignment = widget.ButtonAlignCenter
@@ -90,16 +107,24 @@ func (s *Sidebar) SetCompact(compact bool) {
 			button.Alignment = widget.ButtonAlignLeading
 			button.SetText(button.Hint)
 		}
+		if themed := s.buttonThemes[id]; themed != nil {
+			themed.Theme = sidebarButtonTheme(compact)
+			themed.Refresh()
+		}
 	}
 	if compact {
 		s.heading.Hide()
 		s.tags.Hide()
 		s.compactTags.Show()
+		s.compactTagsWrap.Show()
 	} else {
 		s.heading.Show()
 		s.tags.Show()
 		s.compactTags.Hide()
-		if s.tagPopup != nil { s.tagPopup.Hide() }
+		s.compactTagsWrap.Hide()
+		if s.tagPopup != nil {
+			s.tagPopup.Hide()
+		}
 	}
 	s.scroll.Offset = fyne.Position{}
 	s.scroll.Refresh()
@@ -107,18 +132,28 @@ func (s *Sidebar) SetCompact(compact bool) {
 
 func (s *Sidebar) showTags() {
 	canvas := fyne.CurrentApp().Driver().CanvasForObject(s.compactTags)
-	if canvas == nil { return }
-	if s.tagPopup != nil { s.tagPopup.Hide() }
+	if canvas == nil {
+		return
+	}
+	if s.tagPopup != nil {
+		s.tagPopup.Hide()
+	}
 	selectTag := func(tag string) {
 		s.tagPopup.Hide()
-		if s.onTag != nil { s.onTag(tag) }
+		if s.onTag != nil {
+			s.onTag(tag)
+		}
 	}
 	s.popupTags = container.NewStack(sidebarTags(s.tagData, selectTag))
 	s.popupAdd = widget.NewButtonWithIcon("Add tag", theme.ContentAddIcon(), func() {
 		s.tagPopup.Hide()
-		if s.onAddTag != nil { s.onAddTag() }
+		if s.onAddTag != nil {
+			s.onAddTag()
+		}
 	})
-	if s.onAddTag == nil { s.popupAdd.Disable() }
+	if s.onAddTag == nil {
+		s.popupAdd.Disable()
+	}
 	close := widget.NewButtonWithIcon("", theme.CancelIcon(), func() { s.tagPopup.Hide() })
 	close.Importance = widget.LowImportance
 	heading := container.NewBorder(nil, nil, nil, close, widget.NewLabelWithStyle("My Tags", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
@@ -155,7 +190,9 @@ func (s *Sidebar) SetTags(tags []domain.TagCount) {
 	if s.tagPopup != nil && s.tagPopup.Visible() {
 		s.popupTags.Objects = []fyne.CanvasObject{sidebarTags(tags, func(tag string) {
 			s.tagPopup.Hide()
-			if s.onTag != nil { s.onTag(tag) }
+			if s.onTag != nil {
+				s.onTag(tag)
+			}
 		})}
 		s.popupTags.Refresh()
 	}

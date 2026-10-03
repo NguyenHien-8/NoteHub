@@ -26,16 +26,16 @@ const (
 // Automatic suppression on narrow windows is intentionally not persisted.
 type Rails struct {
 	widget.BaseWidget
-	left, center, right fyne.CanvasObject
-	prefs               fyne.Preferences
-	leftWidth           float32
-	rightWidth          float32
-	leftCollapsed       bool
-	leftCompact         bool
-	rightCollapsed      bool
-	preferRightNarrow   bool
-	leftHandle          *railHandle
-	rightHandle         *railHandle
+	left, center, right  fyne.CanvasObject
+	prefs                fyne.Preferences
+	leftWidth            float32
+	rightWidth           float32
+	leftCollapsed        bool
+	leftCompact          bool
+	rightCollapsed       bool
+	preferRightNarrow    bool
+	leftHandle           *railHandle
+	rightHandle          *railHandle
 	OnLeftCompactChanged func(bool)
 }
 

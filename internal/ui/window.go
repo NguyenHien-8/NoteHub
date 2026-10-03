@@ -50,8 +50,12 @@ type Desktop struct {
 	expiryTicker           *time.Ticker
 	stopTick               chan struct{}
 	shutdownOnce           sync.Once
-	startupOnce            sync.Once
 }
+
+var (
+	leftRailExpandedIcon = theme.NewThemedResource(fyne.NewStaticResource("left-rail-expanded.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3" fill="none" stroke="#000" stroke-width="1.8"/><path d="M9 5v14" fill="none" stroke="#000" stroke-width="1.8" stroke-linecap="round"/></svg>`)))
+	leftRailCompactIcon  = theme.NewThemedResource(fyne.NewStaticResource("left-rail-compact.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3" fill="none" stroke="#000" stroke-width="1.8"/><path d="M15 5v14" fill="none" stroke="#000" stroke-width="1.8" stroke-linecap="round"/></svg>`)))
+)
 
 func NewWindow(application fyne.App, b *app.Backend, version string) *Desktop {
 	return newWindow(application, b, version, work.New())
@@ -112,9 +116,21 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 	brand := widget.NewLabelWithStyle("NoteHub", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	brand.SizeName = brandTextSizeName
 	search := container.NewGridWrap(fyne.NewSize(380, 40), d.GlobalSearch)
-	leftToggle := widget.NewButtonWithIcon("", theme.MenuIcon(), d.rails.ToggleLeft)
+	leftToggle := widget.NewButtonWithIcon("", leftRailExpandedIcon, d.rails.ToggleLeft)
 	rightToggle := widget.NewButtonWithIcon("", theme.ListIcon(), d.rails.ToggleRight)
 	leftToggle.Importance, rightToggle.Importance = widget.LowImportance, widget.LowImportance
+	syncLeftCompact := func(compact bool) {
+		d.sidebar.SetCompact(compact)
+		if compact {
+			leftToggle.SetIcon(leftRailCompactIcon)
+		} else {
+			leftToggle.SetIcon(leftRailExpandedIcon)
+		}
+	}
+	d.rails.OnLeftCompactChanged = syncLeftCompact
+	// Apply persisted manual collapse before the first paint. Automatic narrow
+	// compaction is reported by Rails during the first content layout.
+	syncLeftCompact(d.rails.LeftCollapsed())
 	header := container.New(insetLayout{10}, container.NewBorder(nil, nil,
 		container.NewHBox(leftToggle, logo, brand),
 		container.NewHBox(search, rightToggle),
@@ -148,11 +164,11 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 	return d
 }
 
-// Show maximizes only the first launch, after Fyne creates the native handle.
-// Reopening a hidden window preserves the user's later restored/maximized state.
+// Show presents the already work-area-sized window. Avoiding a post-Show
+// native maximize prevents the visible small-window -> maximized jump on
+// Windows; InitialWindowSize has already fitted the client to the usable monitor.
 func (d *Desktop) Show() {
 	d.Window.Show()
-	d.startupOnce.Do(func() { platform.MaximizeWindow(d.Window) })
 }
 
 func (d *Desktop) ShowAndRun() {

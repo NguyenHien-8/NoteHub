@@ -65,6 +65,11 @@ func (m *Manager) ReorderAttachments(note domain.Memo, orderedIDs []int64) {
 	}, func(_ struct{}, err error) {
 		if err != nil {
 			m.Error(err)
+			// ImageGallery reorders optimistically for a smooth drop. Reload the
+			// saved note on failure so the UI always returns to database truth.
+			if m.Changed != nil {
+				m.Changed()
+			}
 			return
 		}
 		if m.Changed != nil {

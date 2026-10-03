@@ -20,9 +20,9 @@ func TestMaximizeRequiresLiveWindowsHandle(t *testing.T) {
 	defer a.Quit()
 	w := a.NewWindow("startup")
 	for _, tc := range []struct {
-		name string
+		name   string
 		window fyne.Window
-		want bool
+		want   bool
 	}{
 		{"headless", w, false},
 		{"other platform", nativeStartupWindow{w, driver.UnknownContext{}}, false},
@@ -33,7 +33,9 @@ func TestMaximizeRequiresLiveWindowsHandle(t *testing.T) {
 			called := false
 			got := maximizeWindow(tc.window, func(handle uintptr) bool {
 				called = true
-				if handle != 42 { t.Fatalf("wrong native window: %d", handle) }
+				if handle != 42 {
+					t.Fatalf("wrong native window: %d", handle)
+				}
 				return true
 			})
 			if got != tc.want || called != tc.want {

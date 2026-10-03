@@ -14,7 +14,9 @@ func MaximizeWindow(window fyne.Window) bool {
 
 func maximizeWindow(window fyne.Window, maximize func(uintptr) bool) bool {
 	native, ok := window.(driver.NativeWindow)
-	if !ok { return false }
+	if !ok {
+		return false
+	}
 	maximized := false
 	native.RunNative(func(context any) {
 		if windows, ok := context.(driver.WindowsWindowContext); ok && windows.HWND != 0 {

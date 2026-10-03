@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -27,26 +28,27 @@ const (
 // and commits the complete attachment ordering only when the mouse is released.
 type ImageGallery struct {
 	widget.BaseWidget
-	attachments []domain.Attachment
-	thumbnails  map[int64]image.Image
-	tiles       []*imageTile
-	onOpen      func(domain.Attachment)
-	onReorder   func([]int64)
-	onDelete    func(domain.Attachment)
-	dragSource  *imageTile
-	dropTarget  *imageTile
-	ghost       *fyne.Container
-	ghostImage  *canvas.Image
-	ghostShade  *canvas.Rectangle
-	ghostBorder *canvas.Rectangle
-	marker      *canvas.Rectangle
-	frames      []galleryFrame
-	frameWidth  float32
-	frameHeight float32
+	attachments      []domain.Attachment
+	thumbnails       map[int64]image.Image
+	tiles            []*imageTile
+	onOpen           func(domain.Attachment)
+	onReorder        func([]int64)
+	onDelete         func(domain.Attachment)
+	dragSource       *imageTile
+	dropTarget       *imageTile
+	ghost            *fyne.Container
+	ghostImage       *canvas.Image
+	ghostShade       *canvas.Rectangle
+	ghostBorder      *canvas.Rectangle
+	marker           *canvas.Rectangle
+	frames           []galleryFrame
+	frameWidth       float32
+	frameHeight      float32
+	reflowAnimations map[*imageTile]*fyne.Animation
 }
 
 func NewImageGallery(attachments []domain.Attachment, thumbnails map[int64]image.Image, open func(domain.Attachment), reorder func([]int64)) *ImageGallery {
-	g := &ImageGallery{onOpen: open, onReorder: reorder}
+	g := &ImageGallery{onOpen: open, onReorder: reorder, reflowAnimations: make(map[*imageTile]*fyne.Animation)}
 	g.ExtendBaseWidget(g)
 	g.ghostImage = canvas.NewImageFromImage(nil)
 	g.ghostImage.FillMode = canvas.ImageFillContain
@@ -74,9 +76,23 @@ func (g *ImageGallery) SetDelete(remove func(domain.Attachment)) {
 	}
 }
 
+// SetReorderGuard lets dialogs temporarily block drag reordering while another
+// save/delete operation owns the attachment snapshot. The guard is evaluated
+// at drag start and again at drop, preventing optimistic UI changes that cannot
+// be persisted.
+func (g *ImageGallery) SetReorderGuard(guard func() bool) { g.canReorder = guard }
+
+func (g *ImageGallery) reorderAllowed() bool {
+	if g.onReorder == nil || g.reorderPending {
+		return false
+	}
+	return g.canReorder == nil || g.canReorder()
+}
+
 // SetAttachments replaces the gallery snapshot without retaining aliases to
 // caller slices. It is useful after an attachment is deleted in the editor.
 func (g *ImageGallery) SetAttachments(attachments []domain.Attachment, thumbnails map[int64]image.Image) {
+	g.stopReflowAnimations()
 	g.attachments = append([]domain.Attachment(nil), attachments...)
 	g.thumbnails = thumbnails
 	g.tiles = nil
@@ -97,6 +113,7 @@ func (g *ImageGallery) SetAttachments(attachments []domain.Attachment, thumbnail
 		g.tiles = append(g.tiles, tile)
 	}
 	g.dragSource, g.dropTarget = nil, nil
+	g.reorderPending = false
 	g.ghost.Hide()
 	g.marker.Hide()
 	g.Refresh()
@@ -195,21 +212,25 @@ func (g *ImageGallery) targetAt(point fyne.Position) *imageTile {
 	if point.X < 0 || point.Y < 0 || point.X >= g.Size().Width || point.Y >= g.Size().Height {
 		return nil
 	}
-	for _, tile := range g.tiles {
-		position, size := tile.Position(), tile.Size()
+	// Hit-test stable layout slots rather than animated tile positions. This
+	// prevents a tile that is gliding out of the way from repeatedly stealing
+	// the pointer and making drag feedback jitter.
+	frames, _ := g.geometry(g.Size().Width)
+	for index, frame := range frames {
+		position, size := frame.position, frame.size
 		if point.X >= position.X && point.X <= position.X+size.Width && point.Y >= position.Y && point.Y <= position.Y+size.Height {
-			return tile
+			return g.tiles[index]
 		}
 	}
 	return nil
 }
 
 func (g *ImageGallery) beginDrag(source *imageTile, point fyne.Position) {
-	if g.onReorder == nil || !source.primaryDown {
+	if !g.reorderAllowed() || !source.primaryDown {
 		return
 	}
 	if g.dragSource != source {
-		g.clearDragFeedback()
+		g.clearDragFeedback(true)
 		g.dragSource = source
 		source.dragging, source.suppressTap = true, true
 		source.Refresh()
@@ -231,6 +252,7 @@ func (g *ImageGallery) beginDrag(source *imageTile, point fyne.Position) {
 			target.dropTarget = true
 			target.Refresh()
 		}
+		g.animateDropPreview(source, target)
 	}
 	g.moveGhost(source, point)
 	if target == nil {
@@ -262,8 +284,12 @@ func (g *ImageGallery) moveGhost(source *imageTile, point fyne.Position) {
 }
 
 func (g *ImageGallery) endDrag(source *imageTile) {
+	if !g.reorderAllowed() {
+		g.clearDragFeedback(true)
+		return
+	}
 	if g.dragSource != source || g.dropTarget == nil || g.dropTarget == source {
-		g.clearDragFeedback()
+		g.clearDragFeedback(true)
 		return
 	}
 	sourceIndex, targetIndex := -1, -1
@@ -278,7 +304,7 @@ func (g *ImageGallery) endDrag(source *imageTile) {
 		}
 	}
 	if sourceIndex < 0 || targetIndex < 0 || sourceIndex == targetIndex {
-		g.clearDragFeedback()
+		g.clearDragFeedback(true)
 		return
 	}
 	moved := images[sourceIndex]
@@ -300,15 +326,136 @@ func (g *ImageGallery) endDrag(source *imageTile) {
 			ordered = append(ordered, attachment.ID)
 		}
 	}
+
+	// Keep the already animated preview as an optimistic local ordering. The
+	// persistence callback refreshes the timeline on success; callers also
+	// refresh/revert on failure. This avoids the old drop -> snap back -> reload
+	// sequence while retaining database authority over the final order.
 	source.suppressTap = true
+	g.reorderPending = true
+	g.applyLocalOrder(ordered)
 	callback := g.onReorder
-	g.clearDragFeedback()
+	g.clearDragFeedback(false)
+	g.animateCanonicalPositions(110 * time.Millisecond)
 	if callback != nil {
 		callback(ordered)
 	}
 }
 
-func (g *ImageGallery) clearDragFeedback() {
+func (g *ImageGallery) animateDropPreview(source, target *imageTile) {
+	frames, _ := g.geometry(g.Size().Width)
+	if len(frames) != len(g.tiles) {
+		return
+	}
+	order := append([]*imageTile(nil), g.tiles...)
+	if target != nil && target != source {
+		sourceIndex, targetIndex := -1, -1
+		for index, tile := range order {
+			if tile == source {
+				sourceIndex = index
+			}
+			if tile == target {
+				targetIndex = index
+			}
+		}
+		if sourceIndex >= 0 && targetIndex >= 0 {
+			order = append(order[:sourceIndex], order[sourceIndex+1:]...)
+			if targetIndex > len(order) {
+				targetIndex = len(order)
+			}
+			order = append(order, nil)
+			copy(order[targetIndex+1:], order[targetIndex:])
+			order[targetIndex] = source
+		}
+	}
+
+	destinations := make(map[*imageTile]fyne.Position, len(order))
+	for index, tile := range order {
+		if tile != source {
+			destinations[tile] = frames[index].position
+		}
+	}
+	g.animateTiles(destinations, 135*time.Millisecond)
+}
+
+func (g *ImageGallery) animateCanonicalPositions(duration time.Duration) {
+	g.frames = nil
+	frames, _ := g.geometry(g.Size().Width)
+	destinations := make(map[*imageTile]fyne.Position, len(g.tiles))
+	for index, tile := range g.tiles {
+		destinations[tile] = frames[index].position
+	}
+	g.animateTiles(destinations, duration)
+}
+
+func (g *ImageGallery) animateTiles(destinations map[*imageTile]fyne.Position, duration time.Duration) {
+	g.stopReflowAnimations()
+	app := fyne.CurrentApp()
+	for tile, destination := range destinations {
+		start := tile.object.Position()
+		if start == destination {
+			continue
+		}
+		if app == nil || app.Driver() == nil || duration <= 0 {
+			tile.object.Move(destination)
+			continue
+		}
+		tile := tile
+		start := start
+		destination := destination
+		var animation *fyne.Animation
+		animation = fyne.NewAnimation(duration, func(progress float32) {
+			x := start.X + (destination.X-start.X)*progress
+			y := start.Y + (destination.Y-start.Y)*progress
+			tile.object.Move(fyne.NewPos(x, y))
+			if progress >= 1 && g.reflowAnimations[tile] == animation {
+				delete(g.reflowAnimations, tile)
+			}
+		})
+		animation.Curve = fyne.AnimationEaseOut
+		g.reflowAnimations[tile] = animation
+		animation.Start()
+	}
+}
+
+func (g *ImageGallery) stopReflowAnimations() {
+	for tile, animation := range g.reflowAnimations {
+		animation.Stop()
+		delete(g.reflowAnimations, tile)
+	}
+}
+
+func (g *ImageGallery) applyLocalOrder(ids []int64) {
+	byTile := make(map[int64]*imageTile, len(g.tiles))
+	for _, tile := range g.tiles {
+		byTile[tile.attachment.ID] = tile
+	}
+	byAttachment := make(map[int64]domain.Attachment, len(g.attachments))
+	for _, attachment := range g.attachments {
+		byAttachment[attachment.ID] = attachment
+	}
+	images := make([]*imageTile, 0, len(g.tiles))
+	attachments := make([]domain.Attachment, 0, len(ids))
+	for position, id := range ids {
+		attachment, ok := byAttachment[id]
+		if !ok {
+			return
+		}
+		attachment.Position = position
+		attachments = append(attachments, attachment)
+		if tile := byTile[id]; tile != nil {
+			images = append(images, tile)
+		}
+	}
+	if len(images) != len(g.tiles) || len(attachments) != len(g.attachments) {
+		return
+	}
+	g.tiles = images
+	g.attachments = attachments
+	g.frames = nil
+}
+
+func (g *ImageGallery) clearDragFeedback(resetLayout bool) {
 	for _, tile := range g.tiles {
 		changed := tile.dragging || tile.dropTarget
 		tile.dragging, tile.dropTarget = false, false
@@ -319,6 +466,9 @@ func (g *ImageGallery) clearDragFeedback() {
 	g.dragSource, g.dropTarget = nil, nil
 	g.ghost.Hide()
 	g.marker.Hide()
+	if resetLayout {
+		g.animateCanonicalPositions(100 * time.Millisecond)
+	}
 }
 
 type imageGalleryRenderer struct {

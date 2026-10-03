@@ -36,9 +36,13 @@ widget subtrees. The resize hit area is transparent and sits in the gap between
 rounded panels. Side panels use a soft tinted surface while the center workspace
 uses a neutral surface. Automatic rail suppression on narrow windows is not
 persisted as a user collapse choice. The left rail retains a compact icon menu
-instead of disappearing. On Windows, `Desktop.Show` asks the OS to maximize
-the live native window once; the initial fitted client size remains its restore
-size. The OS handles monitor work-area and DPI boundaries.
+instead of disappearing. `Rails.OnLeftCompactChanged` explicitly switches the
+sidebar between labeled and icon-only modes, preventing clipped labels inside
+the compact rail. The header rail control swaps its themed SVG glyph with the
+same state change, so manual and automatic compaction stay visually consistent.
+On Windows the client is sized from the monitor work area
+before `Show`; there is no post-show native maximize, so the first painted frame
+is already screen-fitted and does not visibly jump from a small window.
 
 Timeline uses 40-note keyset pages. Calendar boundaries use local calendar
 arithmetic, including DST. Search has a 300 ms debounce. Image previews are
@@ -51,14 +55,21 @@ height. Geometry is cached until width or attachment data changes.
 rows cannot overlap the next card during resize. A draggable tile has exactly
 one Fyne renderer identity, including when wrapped with drag behavior.
 An in-gallery floating preview follows pointer motion without rebuilding the
-gallery or changing attachment order. Ordering is committed only on drag release
-through the attachment service; failed writes leave the saved order intact.
+gallery. Stable slot hit-testing prevents moving tiles from stealing the drag
+target; non-source tiles use short ease-out animations to move into prospective
+slots. Release applies an optimistic local order and persists the complete
+attachment ID order. The Home path reloads the timeline on both success and
+failure, while Edit reverts to its last saved snapshot on failure, so storage
+remains authoritative without sacrificing smooth drag feedback.
 
-The note editor stores Markdown directly in `Memo.Content`, retaining revision
-checks and the existing draft lifecycle. Toolbar edits produce Markdown or
-allowlisted inline HTML style spans. The local renderer supports those styles
-without fetching URLs or executing HTML. Markdown import/export operates on
-the draft; only Save updates the memo. No database migration is required.
+The note editor stores one Markdown-compatible UTF-8 document directly in
+`Memo.Content`, retaining revision checks and the existing draft lifecycle. Plain
+text therefore remains valid, while icon-assisted toolbar actions produce
+Markdown or allowlisted inline HTML spans for underline, font size, color and
+highlight. The Edit dialog embeds this editor directly and `ShowMemo` uses the
+local Markdown renderer, so saved formatting is visible when the note is opened.
+The renderer never fetches URLs or executes HTML. `.md` import/export operates
+on the draft; only Save updates the memo. No database migration is required.
 
 Migration v2 adds favorites without modifying v1. Counts use distinct active
 shared memos. Backup records carry an optional favorite flag compatible with

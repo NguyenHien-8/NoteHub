@@ -205,11 +205,13 @@ sidebar dùng nền phủ nhẹ, workspace dùng nền trung tính và khoảng 
 panel thay cho vạch phân cách cố định.
 
 `components/image_gallery.go` hiển thị ảnh theo đúng tỉ lệ (`ImageFillContain`),
-hỗ trợ kéo đổi thứ tự và xóa ảnh trong editor. Grid ảnh 2 cột co theo workspace
-nhưng giới hạn tối đa 960 logical px và tự căn giữa khi hai sidebar được thu gọn,
-tránh kéo tile quá rộng. `screens/previews.go` giải mã ảnh ngoài UI thread, giới
-hạn ảnh nguồn 12 MP, tạo preview tối đa 640 × 420 và giữ cache hữu hạn để tránh
-tăng RAM không kiểm soát.
+hỗ trợ kéo đổi thứ tự và xóa ảnh trong editor. Khi kéo, ghost preview đi theo
+chuột còn các tile lân cận chạy animation ease-out vào vị trí dự kiến; hit-test
+dựa trên slot ổn định nên animation không làm target rung/nhảy. Drop cập nhật
+thứ tự cục bộ ngay để UI không giật, sau đó ghi toàn bộ attachment ID xuống DB;
+Home reload lại từ DB nếu ghi thất bại và Edit khôi phục snapshot đã lưu.
+`screens/previews.go` giải mã ảnh ngoài UI thread, giới hạn ảnh nguồn 12 MP, tạo
+preview tối đa 640 × 420 và giữ cache hữu hạn để tránh tăng RAM không kiểm soát.
 
 `ui/typography/fonts.go` phát hiện các font phổ biến đã cài trên Windows/macOS/
 Linux và tải lazy bằng Fyne resource. Font không tồn tại tự fallback về System;
@@ -304,3 +306,19 @@ Git tag vX.Y.Z
 ## Kết luận
 
 Đây là cấu trúc nên dùng làm kiến trúc chuẩn cho NoteHub từ giai đoạn hiện tại. Nó giữ backend độc lập với GUI, hỗ trợ mở rộng lâu dài và tránh phải viết lại business logic nếu sau này thay đổi framework GUI.
+
+`components/note_editor.go` là editor văn bản/Markdown dùng chung `Memo.Content`.
+Toolbar có icon cho Bold, Italic, Underline, Strike, Size, Text Color, Highlight,
+Clear Formatting, Bullets, Numbering, Indent và Outdent; Undo/Redo cùng import/
+export `.md` vẫn làm việc trên draft. Các style ngoài Markdown chuẩn được mã hóa
+bằng một allowlist inline HTML nhỏ và `markdown_view.go` render cục bộ, không tải
+URL ngoài. `dialogs/memo.go` dùng editor này cho Edit Note và dùng MarkdownView
+cho hộp thoại xem ghi chú.
+
+Startup Windows dùng `platform.InitialWindowSize()` để lấy work area + DPI và
+không giới hạn trần 1240×780 nữa. `Desktop.Show()` chỉ show cửa sổ đã fit sẵn,
+không gọi maximize sau khi cửa sổ đã hiện nên loại bỏ hiệu ứng mở cửa sổ nhỏ rồi
+phóng lớn. `Rails.OnLeftCompactChanged` nối trực tiếp với `Sidebar.SetCompact`,
+đảm bảo rail thu gọn chỉ còn icon Home/Calendar/Search/Attachments/Tags/Settings/
+My Tags thay vì cắt nửa text. Nút toggle ở header dùng SVG theo theme và đổi glyph
+theo trạng thái expanded/compact để phản hồi trực quan giống activity bar.

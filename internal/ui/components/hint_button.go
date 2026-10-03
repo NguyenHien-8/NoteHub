@@ -13,7 +13,7 @@ import (
 // icon-only control a readable label on hover or keyboard focus.
 type HintButton struct {
 	widget.Button
-	Hint string
+	Hint  string
 	hints *HintLayer
 }
 
@@ -23,29 +23,33 @@ func NewHintButton(label string, icon fyne.Resource, tapped func()) *HintButton 
 	return b
 }
 
-func (b *HintButton) SetHintLayer(hints *HintLayer) { b.hints = hints }
+func (b *HintButton) SetHintLayer(hints *HintLayer)     { b.hints = hints }
 func (b *HintButton) MouseIn(event *desktop.MouseEvent) { b.Button.MouseIn(event); b.showHint() }
-func (b *HintButton) MouseOut() { b.hideHint(); b.Button.MouseOut() }
-func (b *HintButton) FocusGained() { b.Button.FocusGained(); b.showHint() }
-func (b *HintButton) FocusLost() { b.hideHint(); b.Button.FocusLost() }
-func (b *HintButton) Tapped(event *fyne.PointEvent) { b.hideHint(); b.Button.Tapped(event) }
-func (b *HintButton) TypedKey(event *fyne.KeyEvent) { b.hideHint(); b.Button.TypedKey(event) }
+func (b *HintButton) MouseOut()                         { b.hideHint(); b.Button.MouseOut() }
+func (b *HintButton) FocusGained()                      { b.Button.FocusGained(); b.showHint() }
+func (b *HintButton) FocusLost()                        { b.hideHint(); b.Button.FocusLost() }
+func (b *HintButton) Tapped(event *fyne.PointEvent)     { b.hideHint(); b.Button.Tapped(event) }
+func (b *HintButton) TypedKey(event *fyne.KeyEvent)     { b.hideHint(); b.Button.TypedKey(event) }
 
 func (b *HintButton) showHint() {
-	if b.hints != nil && b.Text == "" && b.Hint != "" { b.hints.show(b) }
+	if b.hints != nil && b.Text == "" && b.Hint != "" {
+		b.hints.show(b)
+	}
 }
 func (b *HintButton) hideHint() {
-	if b.hints != nil && b.hints.active == b { b.hints.hide() }
+	if b.hints != nil && b.hints.active == b {
+		b.hints.hide()
+	}
 }
 
 // HintLayer lives in the ordinary content tree, so labels never capture the
 // mouse or dismiss keyboard focus as a Fyne PopUp overlay would.
 type HintLayer struct {
-	root *fyne.Container
-	bubble *fyne.Container
-	label *widget.Label
+	root       *fyne.Container
+	bubble     *fyne.Container
+	label      *widget.Label
 	background *canvas.Rectangle
-	active *HintButton
+	active     *HintButton
 }
 
 func WithHints(content fyne.CanvasObject) (fyne.CanvasObject, *HintLayer) {
@@ -59,7 +63,9 @@ func WithHints(content fyne.CanvasObject) (fyne.CanvasObject, *HintLayer) {
 
 func (h *HintLayer) show(button *HintButton) {
 	app := fyne.CurrentApp()
-	if app == nil || app.Driver().CanvasForObject(button) == nil { return }
+	if app == nil || app.Driver().CanvasForObject(button) == nil {
+		return
+	}
 	h.active = button
 	h.label.SetText(button.Hint)
 	h.background.FillColor = app.Settings().Theme().Color(theme.ColorNameOverlayBackground, app.Settings().ThemeVariant())

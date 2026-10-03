@@ -193,3 +193,21 @@ func TestGalleryDropAtLastTileBoundaryAndBackwards(t *testing.T) {
 		t.Fatalf("backward boundary drop = %v", got)
 	}
 }
+
+func TestGalleryReorderGuardBlocksOptimisticDragDuringOtherSaves(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	calls := 0
+	g := NewImageGallery(galleryAttachments(), nil, nil, func([]int64) { calls++ })
+	g.SetReorderGuard(func() bool { return false })
+	g.Resize(fyne.NewSize(560, 1000))
+	first := g.tiles[0]
+	first.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary})
+	drag := first.object.(fyne.Draggable)
+	target := g.tiles[1].Position().Add(fyne.NewPos(20, 20))
+	drag.Dragged(&fyne.DragEvent{PointEvent: fyne.PointEvent{Position: target}, Dragged: fyne.NewDelta(100, 0)})
+	drag.DragEnd()
+	if calls != 0 || first.dragging || g.ghost.Visible() || g.reorderPending {
+		t.Fatal("guarded gallery started or committed a reorder")
+	}
+}
