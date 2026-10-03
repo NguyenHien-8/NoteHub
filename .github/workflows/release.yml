@@ -1,183 +1,82 @@
-name: Desktop release artifacts
+name: Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  quality:
-    name: Validate release source
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.x'
-          cache: true
-
-      - name: Validate release version
-        id: version
-        shell: bash
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error title=Invalid release tag::Release tag must be vX.Y.Z"
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Check Go formatting
-        shell: bash
-        run: |
-          unformatted="$(git ls-files -z -- '*.go' | xargs -0 -r gofmt -l)"
-          if [ -n "$unformatted" ]; then
-            echo "::error title=Go source is not formatted::Run gofmt before creating the release tag."
-            printf '%s\n' "$unformatted"
-            exit 1
-          fi
-
-      - name: Check module files are tidy
-        shell: bash
-        run: |
-          go mod tidy
-          if ! git diff --exit-code -- go.mod go.sum; then
-            echo "::error title=Go module files are not tidy::Run 'go mod tidy' and commit go.mod/go.sum before tagging."
-            exit 1
-          fi
-
-  package:
-    name: Package (${{ matrix.os }})
-    needs: quality
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+  build:
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            cc: gcc
-            platform: windows
+            name: windows-x64
           - os: macos-latest
-            cc: clang
-            platform: macos
-          - os: ubuntu-24.04
-            cc: gcc
-            platform: linux
-
-    env:
-      CGO_ENABLED: '1'
-      CC: ${{ matrix.cc }}
-      NOTEHUB_VERSION: ${{ needs.quality.outputs.version }}
-
-    defaults:
-      run:
-        shell: bash
-
+            name: macos-universal
+          - os: ubuntu-latest
+            name: linux-x64
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Preserve repository line endings
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: git config --global core.autocrlf false
-
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26.x'
+          go-version: '1.23.x'
           cache: true
-
-      - name: Install Windows compiler
-        if: runner.os == 'Windows'
-        id: msys2
-        uses: msys2/setup-msys2@v2
+      - uses: jurplel/install-qt-action@v4
         with:
-          msystem: UCRT64
-          update: true
-          install: mingw-w64-ucrt-x86_64-gcc
-
-      - name: Add Windows compiler to PATH
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
-        run: |
-          $gccDir = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
-          $gcc = Join-Path $gccDir 'gcc.exe'
-          if (-not (Test-Path -LiteralPath $gcc -PathType Leaf)) {
-            throw "gcc.exe was not found at $gcc"
-          }
-          $gccDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Install Linux native dependencies
+          version: '6.8.3'
+          cache: true
+      - name: Linux packages
         if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build libgl1-mesa-dev
+      - name: Configure
+        run: cmake -S . -B build/qt -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
+      - name: Build frontend
+        run: cmake --build build/qt --config Release --parallel
+      - name: Build backend
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc \
-            pkg-config \
-            libgl1-mesa-dev \
-            libx11-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxi-dev \
-            libxxf86vm-dev \
-            zenity \
-            xdg-utils \
-            xvfb
-
-      - name: Verify native source before packaging
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a go test ./...
+          mkdir -p package
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" -o package/notehub-backend.exe ./cmd/notehub-backend
+            cp build/qt/frontend/Release/NoteHub.exe package/NoteHub.exe || cp build/qt/frontend/NoteHub.exe package/NoteHub.exe
+            "${QT_ROOT_DIR}/bin/windeployqt.exe" --release --no-translations package/NoteHub.exe
+          elif [[ "${RUNNER_OS}" == "macOS" ]]; then
+            go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" -o package/notehub-backend ./cmd/notehub-backend
+            cp -R build/qt/frontend/NoteHub.app package/NoteHub.app
+            cp package/notehub-backend package/NoteHub.app/Contents/MacOS/notehub-backend
+            "${QT_ROOT_DIR}/bin/macdeployqt" package/NoteHub.app
+            ditto -c -k --sequesterRsrc --keepParent package/NoteHub.app "NoteHub-${GITHUB_REF_NAME}-${{ matrix.name }}.zip"
           else
-            go test ./...
+            go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" -o package/notehub-backend ./cmd/notehub-backend
+            cp build/qt/frontend/NoteHub package/NoteHub
+            cp assets/icons/NoteHub.png package/NoteHub.png
+            tar -C package -czf "NoteHub-${GITHUB_REF_NAME}-${{ matrix.name }}.tar.gz" NoteHub notehub-backend NoteHub.png
           fi
-          go vet ./...
-          go build ./cmd/notehub
-
-      - name: Build Windows executable and ZIP
+      - name: Archive Windows
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          ./scripts/build-windows.ps1 -Version $env:NOTEHUB_VERSION
-          Copy-Item -LiteralPath README.md, LICENSE -Destination dist/windows
-          $arch = go env GOARCH
-          if ($LASTEXITCODE -ne 0) { throw 'Could not determine GOARCH.' }
-          Compress-Archive `
-            -LiteralPath dist/windows/NoteHub.exe, dist/windows/README.md, dist/windows/LICENSE `
-            -DestinationPath "dist/windows/NoteHub-${env:NOTEHUB_VERSION}-windows-$arch.zip" `
-            -Force
-
-      - name: Build macOS app bundle and DMG
-        if: runner.os == 'macOS'
-        shell: bash
-        run: bash scripts/build-macos.sh "$NOTEHUB_VERSION"
-
-      - name: Build Linux binary and tarball
-        if: runner.os == 'Linux'
-        shell: bash
-        run: bash scripts/build-linux.sh "$NOTEHUB_VERSION"
-
-      - name: Upload native packages
-        uses: actions/upload-artifact@v4
+        run: Compress-Archive -Path package/* -DestinationPath "NoteHub-${env:GITHUB_REF_NAME}-${{ matrix.name }}.zip"
+      - uses: actions/upload-artifact@v4
         with:
-          name: NoteHub-${{ env.NOTEHUB_VERSION }}-${{ matrix.platform }}
+          name: NoteHub-${{ matrix.name }}
           path: |
-            dist/${{ matrix.platform }}/*.exe
-            dist/${{ matrix.platform }}/*.zip
-            dist/${{ matrix.platform }}/*.dmg
-            dist/${{ matrix.platform }}/*.tar.gz
-          if-no-files-found: error
-          retention-days: 30
+            NoteHub-*.zip
+            NoteHub-*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*

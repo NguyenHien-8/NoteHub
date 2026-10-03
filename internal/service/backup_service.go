@@ -25,13 +25,16 @@ const (
 	ImportDuplicate
 )
 
-type ImportFailure struct{ UID, Message string }
+type ImportFailure struct {
+	UID     string `json:"uid"`
+	Message string `json:"message"`
+}
 type ImportReport struct {
-	Created    int
-	Replaced   int
-	Duplicated int
-	Skipped    int
-	Failures   []ImportFailure
+	Created    int             `json:"created"`
+	Replaced   int             `json:"replaced"`
+	Duplicated int             `json:"duplicated"`
+	Skipped    int             `json:"skipped"`
+	Failures   []ImportFailure `json:"failures"`
 }
 
 type BackupService struct {

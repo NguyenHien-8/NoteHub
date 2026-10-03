@@ -1,88 +1,101 @@
-# NoteHub Architecture
+# NoteHub Architecture — Qt + Go, two processes
+
+## Kiến trúc mục tiêu
 
 ```text
-Desktop UI (Fyne v2)
-        │
-        ▼
-internal/service
-        │
-        ├───────────────┬────────────────┐
-        ▼               ▼                ▼
-repository interfaces   storage          backup/share
-        │               │
-        ▼               ▼
-SQLite + FTS5       local attachments
+                              NoteHub
+                 ┌──────────────┴──────────────┐
+                 │                             │
+                 ▼                             ▼
+       C++ / Qt GUI process              Go Backend process
+       ──────────────────                ──────────────────
+       Qt Widgets                        Domain
+       MainWindow                        Service
+       MemoCard / MemoDialog    IPC      Repository interfaces
+       Calendar / Search       ◄────►     SQLite implementation
+       Attachments / Tags      JSON      Backup / Share / Storage
+       Settings                stdio
+                                              │
+                                  ┌───────────┴───────────┐
+                                  ▼                       ▼
+                               SQLite                Filesystem
 ```
 
-The UI must not issue SQL or manipulate attachment paths directly.
-`internal/app.OpenBackend` is the composition root used by the GUI.
+## Vì sao dùng 2 process
 
-`internal/ui` owns the window, responsive rails and application theme.
-Presentation widgets live in `components`; `screens` and `dialogs` call
-backend services. The `work.Runner` owns cancellable worker lifetimes and
-posts results through `fyne.Do`. Query generations reject outdated results.
-The UI waits for workers before closing sharing and SQLite.
+1. **Không trộn ABI C++/Go.** Không cần `c-shared`, CGO wrapper hoặc quản lý ownership
+   giữa Qt object và Go runtime.
+2. **Backend giữ nguyên kiến trúc đã kiểm thử.** Service/repository/SQLite không bị
+   viết lại bằng C++.
+3. **GUI native đẹp hơn Fyne.** Qt xử lý DPI, work area, font, native dialogs và
+   resize tốt hơn cho desktop Windows.
+4. **Crash isolation.** GUI và backend có vòng đời tách biệt; Qt phát hiện backend
+   dừng bất thường và đóng có kiểm soát.
+5. **IPC không mở network port.** QProcess nối stdin/stdout trực tiếp. Local share
+   HTTP server là chức năng khác và chỉ bật khi người dùng yêu cầu.
 
-`Desktop.SetAppearance` applies the selected theme and refreshes the content
-tree so scoped button themes and native text/icon caches repaint together.
-`Desktop.SetTypography` persists one global family + logical-pixel text size.
-`internal/ui/typography` resolves only font files already installed by the host
-OS, caches loaded resources, falls back to the Fyne system font when a face is
-missing, and never ships third-party font binaries.
+## Dependency rules
 
-The desktop chrome is a responsive `Rails` widget. Left/right widths are saved
-only after drag end; drag motion changes geometry without refreshing complete
-widget subtrees. The resize hit area is transparent and sits in the gap between
-rounded panels. Side panels use a soft tinted surface while the center workspace
-uses a neutral surface. Automatic rail suppression on narrow windows is not
-persisted as a user collapse choice. The left rail retains a compact icon menu
-instead of disappearing. `Rails.OnLeftCompactChanged` explicitly switches the
-sidebar between labeled and icon-only modes, preventing clipped labels inside
-the compact rail. The header rail control swaps its themed SVG glyph with the
-same state change, so manual and automatic compaction stay visually consistent.
-On Windows the pre-show fallback size is calculated from the work area using
-Windows system DPI plus Fyne's user scale. This intentionally does not use
-`Canvas.Scale()` because a Fyne canvas is still `1.0` until GLFW creates the
-native window. `Desktop.Show()` scopes GLFW's `Maximized` window-creation hint to
-the single NoteHub window. Fyne creates the native window while it is hidden,
-therefore the first visible frame is already maximized to the Windows work area;
-there is no visible normal-window -> maximized transition. The process-wide hint
-is restored immediately after creation so later windows are unaffected. Windows
-remains authoritative for taskbar/title-bar/border/per-monitor-DPI bounds.
+```text
+frontend/ (C++/Qt)
+       │ JSON-RPC
+       ▼
+internal/ipc
+       │
+       ▼
+internal/app
+       │
+       ├── service ──► repository interfaces ──► repository/sqlite
+       ├── storage
+       ├── backup
+       └── share
+```
 
-Timeline uses 40-note keyset pages. Calendar boundaries use local calendar
-arithmetic, including DST. Search has a 300 ms debounce. Image previews are
-decoded off the UI thread, capped at 12 million source pixels, resized to at
-most 640 × 420 while preserving aspect ratio, and retained in a bounded cache.
-Gallery tiles use `canvas.ImageFillContain`. A width-dependent layout fills
-each row with aspect-weighted frames, adapting the column count and bounded
-height. Geometry is cached until width or attachment data changes.
-`NewResponsiveVBox` propagates width before measuring child heights, so gallery
-rows cannot overlap the next card during resize. A draggable tile has exactly
-one Fyne renderer identity, including when wrapped with drag behavior.
-An in-gallery floating preview follows pointer motion without rebuilding the
-gallery. Stable slot hit-testing prevents moving tiles from stealing the drag
-target; non-source tiles use short ease-out animations to move into prospective
-slots. Release applies an optimistic local order and persists the complete
-attachment ID order. The Home path reloads the timeline on both success and
-failure, while Edit reverts to its last saved snapshot on failure, so storage
-remains authoritative without sacrificing smooth drag feedback.
+Không cho phép:
 
-The note editor stores one Markdown-compatible UTF-8 document directly in
-`Memo.Content`, retaining revision checks and the existing draft lifecycle. Plain
-text therefore remains valid, while icon-assisted toolbar actions produce
-Markdown or allowlisted inline HTML spans for underline, font size, color and
-highlight. The Edit dialog embeds this editor directly and `ShowMemo` uses the
-local Markdown renderer, so saved formatting is visible when the note is opened.
-The renderer never fetches URLs or executes HTML. `.md` import/export operates
-on the draft; only Save updates the memo. No database migration is required.
+```text
+Qt GUI ─X─► SQLite
+Qt GUI ─X─► attachment storage internals
+Domain ─X─► Qt/Fyne
+Repository ─X─► GUI
+Go backend stdout ─X─► log text (stdout dành riêng cho JSON IPC)
+```
 
-Migration v2 adds favorites without modifying v1. Counts use distinct active
-shared memos. Backup records carry an optional favorite flag compatible with
-existing version 1 archives; bearer tokens are never exported. Migration checks
-execute inside IMMEDIATE writer transactions to serialize concurrent starts.
+## Startup sequence
 
-The optional HTTP server binds to loopback only and starts solely from an
-explicit Settings action. No saved preference automatically opens a port.
+```text
+1. User launches NoteHub.exe
+2. Qt creates MainWindow but keeps it hidden
+3. QProcess starts notehub-backend.exe
+4. Go resolves AppData → opens SQLite → runs migrations → constructs services
+5. Go sends {"event":"ready", ...}
+6. Qt initializes pages/data
+7. Qt sets WindowMaximized BEFORE show()
+8. First visible frame is already fitted to OS work area
+```
 
-See `BACKEND_FROM_MEMOS.md` for the Memos algorithm selection rationale.
+Điểm 7–8 thay thế toàn bộ workaround GLFW/Fyne trước đây (`window_size*`,
+`window_startup*`). Qt/window manager sở hữu native maximize và DPI.
+
+## Shutdown sequence
+
+Qt gửi `app.shutdown`, backend dừng local share server (nếu đang chạy), đóng
+SQLite, sau đó exit. Nếu backend không dừng trong timeout, QProcess terminate/kill
+để không để process mồ côi.
+
+## Data compatibility
+
+Các package sau được giữ làm source of truth:
+
+- `internal/domain`
+- `internal/service`
+- `internal/repository` + `internal/repository/sqlite`
+- `internal/storage`
+- `internal/backup`
+- `internal/share`
+- `internal/tagparse`
+- `internal/identity`
+- `internal/platform` (data path / OS helpers còn phù hợp)
+
+Schema `memo`, `memo_tag`, `attachment`, `memo_share`, `memo_fts` và migration
+v1→v3 không thay đổi, nên database từ NoteHub 0.2/Fyne mở trực tiếp được.

@@ -47,7 +47,7 @@ func OpenBackend(ctx context.Context, cfg Config) (*Backend, error) {
 	opts := service.Options{MaxMemoBytes: cfg.MaxMemoBytes, MaxAttachmentBytes: cfg.MaxAttachmentBytes}
 	timeline := service.NewTimelineService(store, store, store)
 	backend := &Backend{
-		Paths: paths, Store: store,
+		Paths: paths, Store: store, Files: files,
 		Memos:       service.NewMemoService(store, store, store, files, opts),
 		Attachments: service.NewAttachmentService(store, store, files),
 		Timeline:    timeline,

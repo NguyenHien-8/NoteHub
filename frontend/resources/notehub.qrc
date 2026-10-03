@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="NoteHub.png">NoteHub.png</file>
+  </qresource>
+</RCC>
