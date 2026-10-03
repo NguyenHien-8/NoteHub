@@ -2,6 +2,8 @@
 #include "ImageGallery.h"
 #include "MainWindow.h"
 #include "NoteEditor.h"
+#include <QClipboard>
+#include <QMimeData>
 #include <QtTest>
 #include <QtWidgets>
 
@@ -27,6 +29,41 @@ class UiTests final : public QObject {
         reopened.textEdit()->selectAll();
         QVERIFY(reopened.textEdit()->textCursor().charFormat().fontUnderline());
     }
+    void editorPasteKeepsFormattingAndLineBreaks() {
+        NoteEditor editor;
+        editor.show();
+        auto text = editor.textEdit();
+        text->setFocus();
+
+        auto mime = new QMimeData;
+        mime->setText("first line\nsecond line\nthird line");
+        mime->setHtml("<div><b>first line</b></div><div>second line</div><div>third line</div>");
+        QGuiApplication::clipboard()->setMimeData(mime);
+        text->paste();
+
+        QCOMPARE(text->toPlainText(), QString("first line\nsecond line\nthird line"));
+        const auto saved = editor.content();
+        QVERIFY(saved.startsWith(RichTextPrefix));
+
+        NoteEditor reopened;
+        reopened.setContent(saved);
+        QCOMPARE(reopened.textEdit()->toPlainText(), QString("first line\nsecond line\nthird line"));
+        auto cursor = reopened.textEdit()->textCursor();
+        cursor.setPosition(0);
+        cursor.movePosition(QTextCursor::NextWord, QTextCursor::KeepAnchor);
+        QVERIFY(cursor.charFormat().fontWeight() >= QFont::DemiBold);
+
+        NoteEditor codeEditor;
+        auto codeMime = new QMimeData;
+        const QString command = ".\\scripts\\build-windows.ps1 `\n  -QtRoot \"C:\\Qt\\6.11.2\\mingw_64\" `\n  -Clean";
+        codeMime->setText(command);
+        QGuiApplication::clipboard()->setMimeData(codeMime);
+        codeEditor.textEdit()->paste();
+        NoteEditor codeReopened;
+        codeReopened.setContent(codeEditor.content());
+        QCOMPARE(codeReopened.textEdit()->toPlainText(), command);
+    }
+
     void markdownAndRichTextDoNotLoadResources() {
         LocalTextDocument doc;
         loadNoteDocument(&doc, "![private](file:///missing/private.png)");
@@ -100,6 +137,80 @@ class UiTests final : public QObject {
             window.grab().save(output + "/qt-home-wide.png");
         }
         QTRY_VERIFY_WITH_TIMEOUT(window.findChild<BackendClient *>()->isReady(), 10000);
+    }
+    void sidebarSplitterCanResizeNavigation() {
+        QTemporaryDir settingsDir;
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QString helper = QCoreApplication::applicationDirPath() + "/notehub-fake-core"
+#ifdef Q_OS_WIN
+                                                                  ".exe"
+#endif
+            ;
+        MainWindow window(helper, {});
+        window.resize(1400, 860);
+        window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<BackendClient *>()->isReady(), 10000);
+
+        auto splitter = window.findChild<QSplitter *>("navigationSplitter");
+        auto nav = window.findChild<QScrollArea *>("navScroll");
+        QVERIFY(splitter);
+        QVERIFY(nav);
+        splitter->setSizes({220, 1100});
+        QCoreApplication::processEvents();
+        QVERIFY(nav->width() >= 190);
+        splitter->setSizes({68, 1250});
+        QCoreApplication::processEvents();
+        QVERIFY(nav->width() <= 90);
+    }
+
+    void themeUpdatesCalendarAndSettingsStayCompact() {
+        QTemporaryDir settingsDir;
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+
+        QString helper = QCoreApplication::applicationDirPath() + "/notehub-fake-core"
+#ifdef Q_OS_WIN
+                                                                  ".exe"
+#endif
+            ;
+        MainWindow window(helper, {});
+        window.resize(1400, 860);
+        window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<BackendClient *>()->isReady(), 10000);
+
+        auto miniCalendar = window.findChild<QCalendarWidget *>("miniCalendar");
+        QVERIFY(miniCalendar);
+
+        QToolButton *settingsButton = nullptr;
+        for (auto button : window.findChildren<QToolButton *>())
+            if (button->property("label").toString() == "settings") {
+                settingsButton = button;
+                break;
+            }
+        QVERIFY(settingsButton);
+        QTest::mouseClick(settingsButton, Qt::LeftButton);
+
+        QTRY_VERIFY(window.findChild<QFontComboBox *>("fontCombo"));
+        auto font = window.findChild<QFontComboBox *>("fontCombo");
+        auto appearance = window.findChild<QComboBox *>("appearanceCombo");
+        auto size = window.findChild<QSpinBox *>("fontSizeSpin");
+        QVERIFY(font);
+        QVERIFY(appearance);
+        QVERIFY(size);
+        QVERIFY(font->isEditable());
+        QVERIFY(font->maximumWidth() <= 340);
+        QVERIFY(appearance->maximumWidth() <= 230);
+        QVERIFY(size->maximumWidth() <= 120);
+        auto calendarView = miniCalendar->findChild<QAbstractItemView *>();
+        QVERIFY(calendarView);
+        appearance->setCurrentText("Dark");
+        QCoreApplication::processEvents();
+        QVERIFY(calendarView->viewport()->palette().color(QPalette::Base).lightness() < 128);
+
+        appearance->setCurrentText("Light");
+        QCoreApplication::processEvents();
+        QVERIFY(calendarView->viewport()->palette().color(QPalette::Base).lightness() > 128);
     }
 };
 QTEST_MAIN(UiTests)

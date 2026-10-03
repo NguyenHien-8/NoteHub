@@ -15,6 +15,7 @@ class QCalendarWidget;
 class QToolButton;
 class QCloseEvent;
 class QMessageBox;
+class QSplitter;
 
 class MainWindow final : public QMainWindow {
     Q_OBJECT
@@ -30,6 +31,7 @@ class MainWindow final : public QMainWindow {
     QSettings settings;
     QWidget *navigation, *rightPanel, *composerPanel, *rows, *workspace;
     QScrollArea *scroll, *navigationScroll;
+    QSplitter *navigationSplitter;
     QVBoxLayout *rowLayout;
     QLineEdit *search;
     QTextEdit *composer;
@@ -45,7 +47,7 @@ class MainWindow final : public QMainWindow {
     int generation = 0, searchOffset = 0, attachmentOffset = 0;
     bool compact = false, loading = false;
     void navigate(const QString &destination);
-    void refresh(bool append = false);
+    void refresh(bool append = false, const QString &anchorUid = {});
     void metadata();
     void refreshCalendar(QCalendarWidget *widget);
     void clearRows();

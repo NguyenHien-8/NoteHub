@@ -41,19 +41,19 @@ Do not distribute only `NoteHub.exe`. The complete `dist\windows` directory cont
 
 The Qt shell is intentionally designed as a modern three-area desktop layout:
 
-- compact/expanded navigation rail on the left;
+- draggable compact/expanded navigation rail on the left;
 - note workspace in the center;
 - contextual calendar + Quick Filters on the right when enough width is available.
 
-The header contains the embedded NoteHub logo and global search. `Ctrl+K` focuses search.
+The header contains the embedded NoteHub logo and global search. `Ctrl+K` focuses search. The navigation/workspace boundary is a narrow `QSplitter` handle: it stays visually quiet normally, becomes blue on hover/drag and lets the rail be resized continuously between compact and expanded widths. The header sidebar button still toggles quickly between compact and the last expanded width.
 
-The UI uses Qt Fusion as a stable cross-platform base and one semantic Light/Dark/System theme. Navigation icons are high-DPI line icons rendered by Qt instead of platform-dependent legacy icons.
+The UI uses Qt Fusion as a stable cross-platform base and one semantic Light/Dark/System theme. Navigation/action icons are palette-aware vector-like `QPainter` glyphs, so their neutral/active/disabled colors change immediately with the theme instead of keeping Light-theme pixels.
 
 ### Home
 
 The composer supports text, staged attachments and direct tag insertion. Attachment staging displays a small count instead of a long filename list. Save first creates the memo, then imports attachments; partial attachment failures do not discard the saved memo.
 
-Timeline cards contain timestamp, favorite, edit, share/delete menu, rendered note preview, image gallery, file chips and clickable tag chips.
+Timeline cards contain timestamp, favorite, edit, share/delete menu, rendered note preview, image gallery, file chips and clickable tag chips. Saving or changing attachments on a lower card preserves that memo's viewport position instead of rebuilding the timeline at the first note. Wheel input is contained by the active note card while the pointer remains over it; the text preview scrolls internally and reaching any card boundary does not unexpectedly start scrolling adjacent memo cards.
 
 ### Images
 
@@ -67,6 +67,10 @@ The attachment page uses compact information rows with filename, local path, Ope
 
 Tags are displayed as cards with their counts. Selecting a tag returns to Home with that filter applied.
 
+### Calendar and themes
+
+The mini and full calendars are themed explicitly rather than relying on private `QCalendarWidget` defaults. Calendar table backgrounds, date text, weekend/muted dates, note-day accent markers and previous/next icons all follow Light/Dark/System. System mode also reacts to an OS color-scheme change while NoteHub is running.
+
 ### Settings
 
 Settings are separated into:
@@ -75,7 +79,13 @@ Settings are separated into:
 - Data & backup;
 - Local sharing.
 
-This keeps theme choices separate from filesystem/backup operations and network sharing.
+Appearance controls stay compact instead of stretching across the page. Theme and font controls render a live down/up chevron depending on popup state; the font popup is constrained to the same width as the Calibri/font field. The text-size control has explicit up/down steppers. The font field remains searchable with installed-font suggestions and substring completion.
+
+### Editing and clipboard fidelity
+
+The Edit Note dialog is intentionally document-focused: the old Reload Latest button, attachment list, Attach files button and Remove selected button are removed. Attachment import is now a paperclip action on the editor toolbar. The toolbar uses palette-aware vector glyphs instead of text-symbol buttons.
+
+Clipboard paste prefers rich HTML when it round-trips the clipboard's visible line structure, preserving Word/ChatGPT formatting such as bold, lists, colors and headings. If a source application's HTML collapses line breaks, NoteHub falls back to its plain-text clipboard payload so commands and multi-line text are never silently flattened. Before rich content is persisted, the editor verifies that Qt's HTML serialization can round-trip the visible line breaks.
 
 ## Data directory
 

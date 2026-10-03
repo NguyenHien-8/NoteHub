@@ -35,6 +35,9 @@ class NoteEditor final : public QWidget {
     void importMarkdown();
     void exportMarkdown();
 
+  signals:
+    void attachRequested();
+
   private:
     QTextEdit *rich;
     QPlainTextEdit *source;

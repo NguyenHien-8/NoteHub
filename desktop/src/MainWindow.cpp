@@ -3,72 +3,117 @@
 #include "NoteEditor.h"
 #include <QTextList>
 #include <QAbstractTextDocumentLayout>
+#include <QCompleter>
+#include <QIconEngine>
+#include <QPixmapCache>
+#include <QStyleHints>
 #include <QtWidgets>
 #include <cmath>
 #include <memory>
 
 namespace {
 enum class Glyph { Sidebar, Home, Calendar, Search, Attachment, Tags, Settings, Folder, Star, Share, More,
-                   Edit, Trash, Plus, Note };
+                   Edit, Trash, Plus, Note, ChevronLeft, ChevronRight };
 
-QPixmap iconPixmap(Glyph glyph, const QColor &color, int size = 22, bool filled = false) {
-    constexpr qreal dpr = 2.0;
-    QPixmap pixmap(QSize(size, size) * dpr);
-    pixmap.setDevicePixelRatio(dpr);
-    pixmap.fill(Qt::transparent);
-    QPainter p(&pixmap);
+void paintGlyph(QPainter &p, Glyph glyph, const QColor &color, const QRectF &bounds, bool filled = false) {
+    p.save();
     p.setRenderHint(QPainter::Antialiasing);
-    p.scale(size / 24.0, size / 24.0);
-    QPen pen(color, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    const qreal scale = qMin(bounds.width(), bounds.height()) / 24.0;
+    const QPointF offset(bounds.center().x() - 12.0 * scale, bounds.center().y() - 12.0 * scale);
+    p.translate(offset);
+    p.scale(scale, scale);
+    constexpr qreal pi = 3.14159265358979323846;
+    QPen pen(color, 1.75, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     p.setPen(pen);
     p.setBrush(Qt::NoBrush);
+
     switch (glyph) {
     case Glyph::Sidebar:
-        p.drawRoundedRect(QRectF(3, 4, 18, 16), 2, 2);
-        p.drawLine(QPointF(9, 4), QPointF(9, 20));
+        p.drawRoundedRect(QRectF(3.5, 4.5, 17, 15), 2, 2);
+        p.drawLine(QPointF(9, 4.5), QPointF(9, 19.5));
+        p.drawLine(QPointF(6.2, 8), QPointF(6.2, 16));
         break;
-    case Glyph::Home:
-        p.drawPolyline(QPolygonF{QPointF(3.5, 11), QPointF(12, 4), QPointF(20.5, 11)});
-        p.drawRoundedRect(QRectF(6, 10, 12, 10), 1.5, 1.5);
-        p.drawLine(QPointF(10, 20), QPointF(10, 14));
-        p.drawLine(QPointF(14, 14), QPointF(14, 20));
+    case Glyph::Home: {
+        QPainterPath path;
+        path.moveTo(3.5, 11.5);
+        path.lineTo(12, 4.5);
+        path.lineTo(20.5, 11.5);
+        path.moveTo(6, 10.5);
+        path.lineTo(6, 20);
+        path.lineTo(18, 20);
+        path.lineTo(18, 10.5);
+        p.drawPath(path);
+        p.drawRoundedRect(QRectF(10, 14, 4, 6), 0.8, 0.8);
         break;
+    }
     case Glyph::Calendar:
         p.drawRoundedRect(QRectF(4, 5.5, 16, 14.5), 2, 2);
-        p.drawLine(QPointF(4, 9), QPointF(20, 9));
+        p.drawLine(QPointF(4, 9.5), QPointF(20, 9.5));
         p.drawLine(QPointF(8, 3.8), QPointF(8, 7));
         p.drawLine(QPointF(16, 3.8), QPointF(16, 7));
-        p.drawPoint(QPointF(8, 13)); p.drawPoint(QPointF(12, 13)); p.drawPoint(QPointF(16, 13));
-        p.drawPoint(QPointF(8, 17)); p.drawPoint(QPointF(12, 17));
+        for (qreal y : {13.0, 17.0})
+            for (qreal x : {8.0, 12.0, 16.0})
+                p.drawPoint(QPointF(x, y));
         break;
     case Glyph::Search:
-        p.drawEllipse(QRectF(4, 4, 11, 11));
-        p.drawLine(QPointF(14, 14), QPointF(20, 20));
+        p.drawEllipse(QRectF(4, 4, 11.5, 11.5));
+        p.drawLine(QPointF(14.5, 14.5), QPointF(20, 20));
         break;
-    case Glyph::Attachment:
-        p.drawPath([] { QPainterPath path; path.moveTo(8, 12); path.lineTo(14.5, 5.5); path.cubicTo(18, 2, 23, 7, 19.5, 10.5); path.lineTo(11, 19); path.cubicTo(7.5, 22.5, 2.5, 17.5, 6, 14); path.lineTo(14, 6); return path; }());
+    case Glyph::Attachment: {
+        // A vertical paperclip is easier to recognise than the older chain-like mark.
+        QPainterPath path;
+        path.moveTo(8.4, 12.7);
+        path.lineTo(14.9, 6.2);
+        path.cubicTo(17.2, 3.9, 20.9, 7.5, 18.5, 9.9);
+        path.lineTo(10.7, 17.7);
+        path.cubicTo(7.1, 21.3, 1.9, 16.2, 5.5, 12.6);
+        path.lineTo(13.4, 4.7);
+        p.drawPath(path);
         break;
-    case Glyph::Tags:
-        p.drawPath([] { QPainterPath path; path.moveTo(4, 5); path.lineTo(13, 5); path.lineTo(20, 12); path.lineTo(12, 20); path.lineTo(4, 12); path.closeSubpath(); return path; }());
-        p.drawEllipse(QRectF(7, 8, 2, 2));
+    }
+    case Glyph::Tags: {
+        QPainterPath path;
+        path.moveTo(4, 5.5);
+        path.lineTo(12.8, 5.5);
+        path.lineTo(20, 12.6);
+        path.lineTo(12.2, 20);
+        path.lineTo(4, 11.8);
+        path.closeSubpath();
+        p.drawPath(path);
+        p.drawEllipse(QRectF(7, 8.2, 2.3, 2.3));
         break;
-    case Glyph::Settings:
-        p.drawEllipse(QRectF(8, 8, 8, 8));
-        for (int i = 0; i < 8; ++i) {
-            const qreal a = i * 3.14159265358979323846 / 4.0;
-            const QPointF c(12, 12), a1(c.x() + std::cos(a) * 7, c.y() + std::sin(a) * 7),
-                a2(c.x() + std::cos(a) * 9, c.y() + std::sin(a) * 9);
-            p.drawLine(a1, a2);
+    }
+    case Glyph::Settings: {
+        // Eight-tooth gear with a clear centre hole: reads as Settings in both themes.
+        QPolygonF gear;
+        constexpr int points = 32;
+        for (int i = 0; i < points; ++i) {
+            const qreal angle = -(pi / 2.0) + i * (2.0 * pi / points);
+            const int phase = i % 4;
+            const qreal radius = (phase == 0 || phase == 3) ? 9.2 : 7.3;
+            gear << QPointF(12 + std::cos(angle) * radius, 12 + std::sin(angle) * radius);
         }
+        p.drawPolygon(gear);
+        p.drawEllipse(QRectF(9, 9, 6, 6));
         break;
-    case Glyph::Folder:
-        p.drawPath([] { QPainterPath path; path.moveTo(3.5, 7); path.lineTo(9, 7); path.lineTo(11, 9); path.lineTo(20.5, 9); path.lineTo(20.5, 19); path.lineTo(3.5, 19); path.closeSubpath(); return path; }());
-        p.drawLine(QPointF(3.5, 11), QPointF(20.5, 11));
+    }
+    case Glyph::Folder: {
+        QPainterPath path;
+        path.moveTo(3.5, 7);
+        path.lineTo(9.2, 7);
+        path.lineTo(11.3, 9.2);
+        path.lineTo(20.5, 9.2);
+        path.lineTo(20.5, 19);
+        path.lineTo(3.5, 19);
+        path.closeSubpath();
+        p.drawPath(path);
+        p.drawLine(QPointF(3.5, 11.2), QPointF(20.5, 11.2));
         break;
+    }
     case Glyph::Star: {
         QPolygonF points;
         for (int i = 0; i < 10; ++i) {
-            const qreal a = -3.14159265358979323846 / 2 + i * 3.14159265358979323846 / 5;
+            const qreal a = -(pi / 2.0) + i * pi / 5.0;
             const qreal r = i % 2 ? 4.0 : 9.0;
             points << QPointF(12 + std::cos(a) * r, 12 + std::sin(a) * r);
         }
@@ -78,39 +123,289 @@ QPixmap iconPixmap(Glyph glyph, const QColor &color, int size = 22, bool filled 
         break;
     }
     case Glyph::Share:
-        p.drawEllipse(QRectF(4, 10, 4, 4)); p.drawEllipse(QRectF(16, 5, 4, 4)); p.drawEllipse(QRectF(16, 15, 4, 4));
-        p.drawLine(QPointF(8, 11), QPointF(16, 8)); p.drawLine(QPointF(8, 13), QPointF(16, 16));
+        p.drawEllipse(QRectF(4, 10, 4, 4));
+        p.drawEllipse(QRectF(16, 5, 4, 4));
+        p.drawEllipse(QRectF(16, 15, 4, 4));
+        p.drawLine(QPointF(8, 11), QPointF(16, 8));
+        p.drawLine(QPointF(8, 13), QPointF(16, 16));
         break;
     case Glyph::More:
-        p.setBrush(color); p.setPen(Qt::NoPen);
-        p.drawEllipse(QRectF(5, 11, 2, 2)); p.drawEllipse(QRectF(11, 11, 2, 2)); p.drawEllipse(QRectF(17, 11, 2, 2));
+        p.setBrush(color);
+        p.setPen(Qt::NoPen);
+        p.drawEllipse(QRectF(5, 11, 2, 2));
+        p.drawEllipse(QRectF(11, 11, 2, 2));
+        p.drawEllipse(QRectF(17, 11, 2, 2));
         break;
     case Glyph::Edit:
-        p.drawLine(QPointF(5, 19), QPointF(8, 16)); p.drawLine(QPointF(8, 16), QPointF(17, 7));
-        p.drawLine(QPointF(17, 7), QPointF(20, 10)); p.drawLine(QPointF(20, 10), QPointF(11, 19));
+        p.drawLine(QPointF(5, 19), QPointF(8, 16));
+        p.drawLine(QPointF(8, 16), QPointF(17, 7));
+        p.drawLine(QPointF(17, 7), QPointF(20, 10));
+        p.drawLine(QPointF(20, 10), QPointF(11, 19));
         p.drawLine(QPointF(5, 19), QPointF(11, 19));
         break;
     case Glyph::Trash:
-        p.drawRoundedRect(QRectF(6, 8, 12, 12), 1.5, 1.5); p.drawLine(QPointF(4.5, 7), QPointF(19.5, 7));
-        p.drawLine(QPointF(9, 4.5), QPointF(15, 4.5)); p.drawLine(QPointF(10, 11), QPointF(10, 17)); p.drawLine(QPointF(14, 11), QPointF(14, 17));
+        p.drawRoundedRect(QRectF(6, 8, 12, 12), 1.5, 1.5);
+        p.drawLine(QPointF(4.5, 7), QPointF(19.5, 7));
+        p.drawLine(QPointF(9, 4.5), QPointF(15, 4.5));
+        p.drawLine(QPointF(10, 11), QPointF(10, 17));
+        p.drawLine(QPointF(14, 11), QPointF(14, 17));
         break;
     case Glyph::Plus:
-        p.drawLine(QPointF(12, 5), QPointF(12, 19)); p.drawLine(QPointF(5, 12), QPointF(19, 12));
+        p.drawLine(QPointF(12, 5), QPointF(12, 19));
+        p.drawLine(QPointF(5, 12), QPointF(19, 12));
         break;
     case Glyph::Note:
-        p.drawRoundedRect(QRectF(5, 4, 14, 16), 2, 2); p.drawLine(QPointF(8, 9), QPointF(16, 9));
-        p.drawLine(QPointF(8, 13), QPointF(16, 13)); p.drawLine(QPointF(8, 17), QPointF(13, 17));
+        p.drawRoundedRect(QRectF(5, 4, 14, 16), 2, 2);
+        p.drawLine(QPointF(8, 9), QPointF(16, 9));
+        p.drawLine(QPointF(8, 13), QPointF(16, 13));
+        p.drawLine(QPointF(8, 17), QPointF(13, 17));
+        break;
+    case Glyph::ChevronLeft:
+        p.drawPolyline(QPolygonF{QPointF(15, 5), QPointF(8, 12), QPointF(15, 19)});
+        break;
+    case Glyph::ChevronRight:
+        p.drawPolyline(QPolygonF{QPointF(9, 5), QPointF(16, 12), QPointF(9, 19)});
         break;
     }
-    return pixmap;
+    p.restore();
 }
 
+class PaletteIconEngine final : public QIconEngine {
+  public:
+    explicit PaletteIconEngine(Glyph value) : glyph(value) {}
+    QIconEngine *clone() const override { return new PaletteIconEngine(glyph); }
+
+    void paint(QPainter *painter, const QRect &rect, QIcon::Mode mode, QIcon::State state) override {
+        const QPalette palette = qApp ? qApp->palette() : QPalette();
+        QColor color;
+        if (mode == QIcon::Disabled)
+            color = palette.color(QPalette::Disabled, QPalette::Text);
+        else if (state == QIcon::On || mode == QIcon::Selected)
+            color = palette.color(QPalette::Highlight);
+        else if (mode == QIcon::Active)
+            color = palette.color(QPalette::Text);
+        else
+            color = palette.color(QPalette::PlaceholderText);
+        paintGlyph(*painter, glyph, color, rect.adjusted(2, 2, -2, -2), state == QIcon::On && glyph == Glyph::Star);
+    }
+
+    QPixmap pixmap(const QSize &size, QIcon::Mode mode, QIcon::State state) override {
+        QPixmap pix(size);
+        pix.fill(Qt::transparent);
+        QPainter painter(&pix);
+        paint(&painter, pix.rect(), mode, state);
+        return pix;
+    }
+
+  private:
+    Glyph glyph;
+};
+
 QIcon lineIcon(Glyph glyph) {
-    QIcon result;
-    result.addPixmap(iconPixmap(glyph, QColor("#66758a")), QIcon::Normal, QIcon::Off);
-    result.addPixmap(iconPixmap(glyph, QColor("#087bff"), 22, glyph == Glyph::Star), QIcon::Normal, QIcon::On);
-    result.addPixmap(iconPixmap(glyph, QColor("#9ba8b8")), QIcon::Disabled, QIcon::Off);
-    return result;
+    return QIcon(new PaletteIconEngine(glyph));
+}
+
+class ContainedTextBrowser final : public QTextBrowser {
+  public:
+    using QTextBrowser::QTextBrowser;
+
+  protected:
+    void wheelEvent(QWheelEvent *event) override {
+        // The preview deliberately owns wheel input even though its scrollbar is
+        // hidden. This avoids Qt chaining an exhausted child scroll area into the
+        // outer timeline while the pointer is still over the same memo.
+        if (event->modifiers().testFlag(Qt::ControlModifier)) {
+            QTextBrowser::wheelEvent(event);
+            event->accept();
+            return;
+        }
+        if (auto bar = verticalScrollBar(); bar && bar->maximum() > bar->minimum()) {
+            int delta = event->pixelDelta().y();
+            if (delta == 0)
+                delta = qRound((event->angleDelta().y() / 120.0) * QApplication::wheelScrollLines() *
+                               qMax(12, fontMetrics().lineSpacing()));
+            bar->setValue(bar->value() - delta);
+        }
+        event->accept();
+    }
+};
+
+class WheelGuardFrame final : public QFrame {
+  public:
+    using QFrame::QFrame;
+
+  protected:
+    void wheelEvent(QWheelEvent *event) override {
+        // Wheel events ignored by non-scrollable children stop at the memo card
+        // instead of bubbling into the timeline's QScrollArea.
+        event->accept();
+    }
+};
+
+void paintChevron(QWidget *widget, bool open) {
+    if (!widget)
+        return;
+    QPainter painter(widget);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const auto group = widget->isEnabled() ? QPalette::Active : QPalette::Disabled;
+    QColor color = widget->palette().color(group, QPalette::Text);
+    QPen pen(color, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    painter.setPen(pen);
+    const qreal cx = widget->width() - 15.0;
+    const qreal cy = widget->height() / 2.0;
+    QPolygonF arrow;
+    if (open)
+        arrow << QPointF(cx - 4.0, cy + 2.0) << QPointF(cx, cy - 2.0) << QPointF(cx + 4.0, cy + 2.0);
+    else
+        arrow << QPointF(cx - 4.0, cy - 2.0) << QPointF(cx, cy + 2.0) << QPointF(cx + 4.0, cy - 2.0);
+    painter.drawPolyline(arrow);
+}
+
+class ArrowComboBox final : public QComboBox {
+  public:
+    using QComboBox::QComboBox;
+
+  protected:
+    void showPopup() override {
+        popupOpen = true;
+        QComboBox::showPopup();
+        if (view() && view()->window())
+            view()->window()->setFixedWidth(width());
+        update();
+    }
+    void hidePopup() override {
+        QComboBox::hidePopup();
+        popupOpen = false;
+        update();
+    }
+    void paintEvent(QPaintEvent *event) override {
+        QComboBox::paintEvent(event);
+        paintChevron(this, popupOpen);
+    }
+
+  private:
+    bool popupOpen = false;
+};
+
+class ArrowFontComboBox final : public QFontComboBox {
+  public:
+    using QFontComboBox::QFontComboBox;
+
+  protected:
+    void showPopup() override {
+        popupOpen = true;
+        QFontComboBox::showPopup();
+        if (view()) {
+            view()->setMinimumWidth(width());
+            view()->setMaximumWidth(width());
+            if (view()->window())
+                view()->window()->setFixedWidth(width());
+        }
+        update();
+    }
+    void hidePopup() override {
+        QFontComboBox::hidePopup();
+        popupOpen = false;
+        update();
+    }
+    void paintEvent(QPaintEvent *event) override {
+        QFontComboBox::paintEvent(event);
+        paintChevron(this, popupOpen);
+    }
+
+  private:
+    bool popupOpen = false;
+};
+
+class ArrowSpinBox final : public QSpinBox {
+  public:
+    using QSpinBox::QSpinBox;
+
+  protected:
+    void paintEvent(QPaintEvent *event) override {
+        QSpinBox::paintEvent(event);
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const auto group = isEnabled() ? QPalette::Active : QPalette::Disabled;
+        const QColor color = palette().color(group, QPalette::Text);
+        painter.setPen(QPen(color, 1.45, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        const qreal cx = width() - 14.0;
+        const qreal topY = height() * 0.31;
+        const qreal bottomY = height() * 0.69;
+        painter.drawPolyline(QPolygonF{QPointF(cx - 3.4, topY + 1.6), QPointF(cx, topY - 1.6),
+                                      QPointF(cx + 3.4, topY + 1.6)});
+        painter.drawPolyline(QPolygonF{QPointF(cx - 3.4, bottomY - 1.6), QPointF(cx, bottomY + 1.6),
+                                      QPointF(cx + 3.4, bottomY - 1.6)});
+    }
+};
+
+void applyCalendarChrome(QCalendarWidget *widget) {
+    if (!widget)
+        return;
+    if (auto previous = widget->findChild<QToolButton *>("qt_calendar_prevmonth")) {
+        previous->setIcon(lineIcon(Glyph::ChevronLeft));
+        previous->setIconSize({18, 18});
+        previous->setToolTip(QObject::tr("Previous month"));
+    }
+    if (auto next = widget->findChild<QToolButton *>("qt_calendar_nextmonth")) {
+        next->setIcon(lineIcon(Glyph::ChevronRight));
+        next->setIconSize({18, 18});
+        next->setToolTip(QObject::tr("Next month"));
+    }
+    const QPalette appPalette = qApp->palette();
+    QPalette calendarPalette = widget->palette();
+    for (auto role : {QPalette::Window, QPalette::Base, QPalette::AlternateBase, QPalette::Button})
+        calendarPalette.setColor(role, appPalette.color(QPalette::Base));
+    calendarPalette.setColor(QPalette::WindowText, appPalette.color(QPalette::Text));
+    calendarPalette.setColor(QPalette::Text, appPalette.color(QPalette::Text));
+    calendarPalette.setColor(QPalette::ButtonText, appPalette.color(QPalette::Text));
+    calendarPalette.setColor(QPalette::Highlight, appPalette.color(QPalette::Highlight));
+    calendarPalette.setColor(QPalette::HighlightedText, appPalette.color(QPalette::HighlightedText));
+    calendarPalette.setColor(QPalette::PlaceholderText, appPalette.color(QPalette::PlaceholderText));
+    widget->setPalette(calendarPalette);
+    for (auto view : widget->findChildren<QAbstractItemView *>()) {
+        view->setPalette(calendarPalette);
+        view->viewport()->setPalette(calendarPalette);
+        view->viewport()->setAutoFillBackground(true);
+    }
+    widget->update();
+}
+
+void applyCalendarDateColors(QCalendarWidget *widget, int year, int month) {
+    if (!widget)
+        return;
+    widget->setDateTextFormat(QDate(), QTextCharFormat());
+
+    const QColor text = qApp->palette().color(QPalette::Text);
+    const QColor muted = qApp->palette().color(QPalette::PlaceholderText);
+    const bool dark = qApp->palette().color(QPalette::Window).lightness() < 128;
+    const QColor weekend = dark ? QColor("#ff7b7b") : QColor("#d92d20");
+
+    QTextCharFormat weekdayHeader;
+    weekdayHeader.setForeground(text);
+    for (auto day : {Qt::Monday, Qt::Tuesday, Qt::Wednesday, Qt::Thursday, Qt::Friday})
+        widget->setWeekdayTextFormat(day, weekdayHeader);
+    QTextCharFormat weekendHeader;
+    weekendHeader.setForeground(weekend);
+    widget->setWeekdayTextFormat(Qt::Saturday, weekendHeader);
+    widget->setWeekdayTextFormat(Qt::Sunday, weekendHeader);
+
+    const QDate first(year, month, 1);
+    if (!first.isValid())
+        return;
+    const int firstWeekday = int(widget->firstDayOfWeek());
+    const int leading = (first.dayOfWeek() - firstWeekday + 7) % 7;
+    QDate day = first.addDays(-leading);
+    for (int i = 0; i < 42; ++i, day = day.addDays(1)) {
+        QTextCharFormat format;
+        if (day.month() != month || day.year() != year)
+            format.setForeground(muted);
+        else if (day.dayOfWeek() == Qt::Saturday || day.dayOfWeek() == Qt::Sunday)
+            format.setForeground(weekend);
+        else
+            format.setForeground(text);
+        widget->setDateTextFormat(day, format);
+    }
 }
 
 QPushButton *button(const QString &text, QWidget *parent = nullptr) {
@@ -131,7 +426,8 @@ QToolButton *iconButton(Glyph glyph, const QString &tip, QWidget *parent = nullp
 }
 
 QFrame *card(const char *name = "card") {
-    auto f = new QFrame;
+    QFrame *f = qstrcmp(name, "noteCard") == 0 ? static_cast<QFrame *>(new WheelGuardFrame)
+                                                : static_cast<QFrame *>(new QFrame);
     f->setObjectName(name);
     f->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     return f;
@@ -215,9 +511,17 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
     header->addWidget(search, 1);
     outer->addLayout(header);
 
-    auto columns = new QHBoxLayout;
-    columns->setSpacing(12);
-    outer->addLayout(columns, 1);
+    navigationSplitter = new QSplitter(Qt::Horizontal);
+    navigationSplitter->setObjectName("navigationSplitter");
+    navigationSplitter->setChildrenCollapsible(false);
+    navigationSplitter->setHandleWidth(7);
+    outer->addWidget(navigationSplitter, 1);
+
+    auto contentColumns = new QWidget;
+    contentColumns->setObjectName("contentColumns");
+    auto columns = new QHBoxLayout(contentColumns);
+    columns->setContentsMargins(0, 0, 0, 0);
+    columns->setSpacing(10);
 
     navigation = new QFrame;
     navigation->setObjectName("sideRail");
@@ -237,6 +541,8 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
         b->setText(entry.label);
         b->setProperty("label", entry.destination);
         b->setToolTip(entry.label);
+        b->setAccessibleName(entry.label);
+        b->setAccessibleDescription(tr("Navigate to %1").arg(entry.label));
         b->setIcon(lineIcon(entry.glyph));
         b->setIconSize({21, 21});
         b->setCheckable(true);
@@ -257,6 +563,7 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
     myTags->setProperty("label", "my tags");
     myTags->setText(tr("My Tags"));
     myTags->setToolTip(tr("My Tags"));
+    myTags->setAccessibleName(tr("My Tags"));
     myTags->setIcon(lineIcon(Glyph::Folder));
     myTags->setIconSize({21, 21});
     myTags->setMinimumHeight(44);
@@ -300,7 +607,18 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
     navigationScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     navigationScroll->setWidget(navigation);
     navigationScroll->setObjectName("navScroll");
-    columns->addWidget(navigationScroll);
+    navigationScroll->setMinimumWidth(64);
+    navigationScroll->setMaximumWidth(280);
+    navigationSplitter->addWidget(navigationScroll);
+    navigationSplitter->addWidget(contentColumns);
+    navigationSplitter->setStretchFactor(0, 0);
+    navigationSplitter->setStretchFactor(1, 1);
+    navigationSplitter->setCollapsible(0, false);
+    navigationSplitter->setCollapsible(1, false);
+    if (auto handle = navigationSplitter->handle(1)) {
+        handle->setToolTip(tr("Drag to resize the navigation sidebar"));
+        handle->setAccessibleName(tr("Resize navigation sidebar"));
+    }
 
     workspace = new QFrame;
     workspace->setObjectName("workspace");
@@ -487,9 +805,28 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
     columns->addWidget(rightPanel);
 
     compact = settings.value("navigation/compact", true).toBool();
-    connect(leftToggle, &QPushButton::clicked, this, [this] {
-        compact = !compact;
+    const int savedNavigationWidth = settings.value(
+        "navigation/width", compact ? 68 : settings.value("navigation/expandedWidth", 212).toInt()).toInt();
+    navigationSplitter->setSizes({qBound(64, savedNavigationWidth, 280), 1200});
+    connect(navigationSplitter, &QSplitter::splitterMoved, this, [this](int, int) {
+        const int width = navigationScroll->width();
+        compact = width < 136;
         settings.setValue("navigation/compact", compact);
+        settings.setValue("navigation/width", width);
+        if (!compact)
+            settings.setValue("navigation/expandedWidth", width);
+        applyNavigation();
+    });
+    connect(leftToggle, &QPushButton::clicked, this, [this] {
+        const bool currentlyCompact = navigationScroll->width() < 136;
+        const int target = currentlyCompact
+                               ? qBound(160, settings.value("navigation/expandedWidth", 212).toInt(), 280)
+                               : 68;
+        const int remaining = qMax(420, navigationSplitter->width() - target - navigationSplitter->handleWidth());
+        navigationSplitter->setSizes({target, remaining});
+        compact = target < 136;
+        settings.setValue("navigation/compact", compact);
+        settings.setValue("navigation/width", target);
         applyNavigation();
     });
     debounce.setSingleShot(true);
@@ -509,6 +846,10 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
         showError(message);
     });
     save->setEnabled(false);
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
+        if (settings.value("appearance", "Light").toString() == "System")
+            applyAppearance();
+    });
     applyAppearance();
     applyNavigation();
     QTimer::singleShot(0, this, [this, program, profile] { backend.start(program, profile); });
@@ -574,12 +915,20 @@ void MainWindow::navigate(const QString &destination) {
     refresh();
 }
 void MainWindow::applyNavigation() {
-    const bool small = compact || width() < 980;
-    navigationScroll->setFixedWidth(small ? 68 : 212);
+    int railWidth = navigationScroll ? navigationScroll->width() : 0;
+    if (railWidth <= 0)
+        railWidth = compact ? 68 : settings.value("navigation/expandedWidth", 212).toInt();
+    const bool small = railWidth < 136;
+    compact = small;
     leftToggle->setToolTip(small ? tr("Expand navigation") : tr("Collapse navigation"));
     const QString active = (page == "favorites" || page == "shared") ? "home" : page;
     for (auto b : navButtons) {
         b->setToolButtonStyle(small ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
+        if (b->property("compact").toBool() != small) {
+            b->setProperty("compact", small);
+            b->style()->unpolish(b);
+            b->style()->polish(b);
+        }
         const auto key = b->property("label").toString();
         if (b->isCheckable())
             b->setChecked(key == active);
@@ -601,30 +950,59 @@ void MainWindow::metadata() {
     refreshCalendar(calendar);
 }
 void MainWindow::refreshCalendar(QCalendarWidget *widget) {
-    if (!backend.isReady())
+    if (!widget)
         return;
     const int year = widget->yearShown(), month = widget->monthShown();
+    applyCalendarChrome(widget);
+    applyCalendarDateColors(widget, year, month);
+    if (!backend.isReady())
+        return;
+
     backend.call(widget, "calendar.month", {{"year", year}, {"month", month}},
         [widget, year, month](const QJsonValue &v, const QString &code, const QString &) {
             if (!code.isEmpty() || widget->yearShown() != year || widget->monthShown() != month)
                 return;
-            widget->setDateTextFormat(QDate(), QTextCharFormat());
+
+            // Keep all base date colors theme-aware, then use the accent only
+            // for days that contain notes.
+            applyCalendarDateColors(widget, year, month);
+            const QColor accent = qApp->palette().color(QPalette::Highlight);
             for (const auto &d : v.toArray()) {
-                auto day = d.toObject();
-                QTextCharFormat f;
-                f.setFontWeight(QFont::Bold);
-                f.setForeground(QColor("#087bff"));
-                f.setToolTip(QObject::tr("%1 notes").arg(day["count"].toInt()));
-                widget->setDateTextFormat(QDate::fromString(day["date"].toString(), Qt::ISODate), f);
+                const auto day = d.toObject();
+                const QDate date = QDate::fromString(day["date"].toString(), Qt::ISODate);
+                auto format = widget->dateTextFormat(date);
+                format.setFontWeight(QFont::DemiBold);
+                format.setForeground(accent);
+                format.setToolTip(QObject::tr("%1 notes").arg(day["count"].toInt()));
+                widget->setDateTextFormat(date, format);
             }
+            widget->update();
         });
 }
-void MainWindow::refresh(bool append) {
+void MainWindow::refresh(bool append, const QString &anchorUid) {
     if (!backend.isReady())
         return;
     if (append && loading)
         return;
     applyNavigation();
+
+    // Preserve the edited card's viewport position across an asynchronous reload.
+    // Rebuilding the timeline used to reset the scroll bar to the first memo.
+    int restoreScroll = -1;
+    int anchorViewportY = 0;
+    bool anchorFound = false;
+    if (!append && !anchorUid.isEmpty()) {
+        restoreScroll = scroll->verticalScrollBar()->value();
+        for (int i = 0; i < rowLayout->count(); ++i) {
+            auto widget = rowLayout->itemAt(i)->widget();
+            if (widget && widget->property("memoUid").toString() == anchorUid) {
+                anchorViewportY = widget->mapTo(scroll->viewport(), QPoint(0, 0)).y();
+                anchorFound = true;
+                break;
+            }
+        }
+    }
+
     const int current = ++generation;
     loading = true;
     more->hide();
@@ -751,10 +1129,14 @@ void MainWindow::refresh(bool append) {
                              auto l = new QHBoxLayout(f);
                              l->setContentsMargins(12, 10, 10, 10);
                              l->setSpacing(10);
-                             auto icon = new QLabel;
-                             icon->setPixmap(lineIcon(Glyph::Attachment).pixmap(22, 22));
+                             auto icon = new QToolButton;
+                             icon->setObjectName("decorativeIcon");
+                             icon->setIcon(lineIcon(Glyph::Attachment));
+                             icon->setIconSize({22, 22});
                              icon->setFixedSize(30, 30);
-                             icon->setAlignment(Qt::AlignCenter);
+                             icon->setAutoRaise(true);
+                             icon->setFocusPolicy(Qt::NoFocus);
+                             icon->setAttribute(Qt::WA_TransparentForMouseEvents);
                              l->addWidget(icon);
                              auto info = new QVBoxLayout;
                              info->setSpacing(1);
@@ -816,7 +1198,9 @@ void MainWindow::refresh(bool append) {
         p["text"] = search->text();
     backend.call(
         this, "memos.list", p,
-        [this, current, append](const QJsonValue &v, const QString &code, const QString &message) {
+        [this, current, append, anchorUid, anchorViewportY, anchorFound, restoreScroll](const QJsonValue &v,
+                                                                                       const QString &code,
+                                                                                       const QString &message) {
             if (current != generation)
                 return;
             loading = false;
@@ -841,6 +1225,27 @@ void MainWindow::refresh(bool append) {
                 label->setMinimumHeight(150);
                 layout->addWidget(label);
                 rowLayout->addWidget(empty);
+            }
+
+            if (!append && restoreScroll >= 0) {
+                QTimer::singleShot(0, scroll, [this, current, anchorUid, anchorViewportY, anchorFound, restoreScroll] {
+                    if (current != generation)
+                        return;
+                    rowLayout->activate();
+                    int target = restoreScroll;
+                    if (anchorFound) {
+                        for (int i = 0; i < rowLayout->count(); ++i) {
+                            auto widget = rowLayout->itemAt(i)->widget();
+                            if (widget && widget->property("memoUid").toString() == anchorUid) {
+                                const int cardY = widget->mapTo(rows, QPoint(0, 0)).y();
+                                target = cardY - anchorViewportY;
+                                break;
+                            }
+                        }
+                    }
+                    auto bar = scroll->verticalScrollBar();
+                    bar->setValue(qBound(0, target, bar->maximum()));
+                });
             }
         });
 }
@@ -868,6 +1273,7 @@ void MainWindow::addNote(const QJsonObject &memo) {
     top->addWidget(menu);
     l->addLayout(top);
     const auto uid = memo["uid"].toString();
+    f->setProperty("memoUid", uid);
     connect(favorite, &QToolButton::toggled, this, [this, uid, favorite](bool checked) {
         favorite->setEnabled(false);
         backend.call(favorite, "memos.favorite", {{"uid", uid}, {"favorite", checked}},
@@ -899,7 +1305,7 @@ void MainWindow::addNote(const QJsonObject &memo) {
             });
     });
 
-    auto text = new QTextBrowser;
+    auto text = new ContainedTextBrowser;
     text->setObjectName("notePreview");
     text->setDocument(new LocalTextDocument(text));
     text->document()->setDocumentMargin(0);
@@ -908,6 +1314,10 @@ void MainWindow::addNote(const QJsonObject &memo) {
     text->setFrameShape(QFrame::NoFrame);
     text->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     text->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    text->document()->setDefaultStyleSheet(
+        "p { margin-top: 0; margin-bottom: 6px; } "
+        "ul, ol { margin-top: 4px; margin-bottom: 6px; } "
+        "pre { margin-top: 6px; margin-bottom: 6px; }");
     loadNoteDocument(text->document(), memo["content"].toString());
     text->setMinimumHeight(36);
     text->setMaximumHeight(220);
@@ -933,13 +1343,13 @@ void MainWindow::addNote(const QJsonObject &memo) {
             gallery->setEnabled(false);
             QPointer<ImageGallery> guard(gallery);
             backend.call(this, "attachments.reorder", {{"uid", uid}, {"order", order}},
-                         [this, guard](const QJsonValue &, const QString &code, const QString &message) {
+                         [this, guard, uid](const QJsonValue &, const QString &code, const QString &message) {
                              if (guard)
                                  guard->setEnabled(true);
                              if (!code.isEmpty())
                                  showError(message);
                              else
-                                 refresh();
+                                 refresh(false, uid);
                          });
         });
     }
@@ -1009,140 +1419,94 @@ void MainWindow::editNote(const QString &uid) {
         auto dialog = new MemoDialog(this);
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->setWindowTitle(tr("Edit Note"));
-        dialog->resize(qMin(940, width() - 60), qMin(780, height() - 60));
-        dialog->setMinimumSize(500, 360);
-        auto l = new QVBoxLayout(dialog);
+        dialog->resize(qMin(940, width() - 60), qMin(760, height() - 60));
+        dialog->setMinimumSize(560, 420);
+
+        auto layout = new QVBoxLayout(dialog);
+        layout->setContentsMargins(14, 14, 14, 12);
+        layout->setSpacing(10);
+
         auto editor = new NoteEditor;
         dialog->editor = editor;
         editor->setContent(memo["content"].toString());
-        l->addWidget(editor, 1);
-        auto attachments = new QListWidget;
-        attachments->setMaximumHeight(100);
-        l->addWidget(attachments);
-        auto fill = [attachments](const QJsonObject &m) {
-            attachments->clear();
-            for (const auto &v : m["attachments"].toArray()) {
-                auto a = v.toObject();
-                auto item = new QListWidgetItem(a["filename"].toString(), attachments);
-                item->setData(Qt::UserRole, a);
-            }
-        };
-        fill(memo);
-        auto files = new QHBoxLayout;
-        auto attach = button(tr("Attach files")), remove = button(tr("Remove selected"));
-        files->addWidget(attach);
-        files->addWidget(remove);
-        files->addStretch();
-        l->addLayout(files);
+        layout->addWidget(editor, 1);
+
         auto status = new QLabel;
+        status->setObjectName("muted");
         status->setWordWrap(true);
-        l->addWidget(status);
+        status->hide();
+        layout->addWidget(status);
+
         auto buttons = new QHBoxLayout;
-        auto reload = button(tr("Reload latest")), cancel = button(tr("Cancel")),
-             saveNote = button(tr("Save"));
+        auto cancel = button(tr("Cancel")), saveNote = button(tr("Save"));
         saveNote->setObjectName("primary");
-        buttons->addWidget(reload);
         buttons->addStretch();
         buttons->addWidget(cancel);
         buttons->addWidget(saveNote);
-        l->addLayout(buttons);
+        layout->addLayout(buttons);
+
         auto current = std::make_shared<QJsonObject>(memo);
-        auto setBusy = [dialog, editor, attach, remove, reload, cancel, saveNote](bool busy) {
-            dialog->busy = busy;
-            for (auto w : QList<QWidget *>{editor, attach, remove, reload, cancel, saveNote})
-                w->setEnabled(!busy);
+        auto setStatus = [status](const QString &message) {
+            status->setText(message);
+            status->setVisible(!message.trimmed().isEmpty());
         };
+        auto setBusy = [dialog, editor, cancel, saveNote](bool busy) {
+            dialog->busy = busy;
+            for (auto widget : QList<QWidget *>{editor, cancel, saveNote})
+                widget->setEnabled(!busy);
+        };
+
         connect(cancel, &QPushButton::clicked, dialog, &QDialog::reject);
-        connect(
-            saveNote, &QPushButton::clicked, dialog, [this, dialog, editor, status, current, uid, setBusy] {
-                setBusy(true);
-                status->setText(tr("Saving…"));
-                backend.call(
-                    dialog, "memos.update",
-                    {{"uid", uid}, {"revision", (*current)["revision"]}, {"content", editor->content()}},
-                    [this, dialog, status, setBusy](const QJsonValue &, const QString &code,
-                                                    const QString &message) {
-                        setBusy(false);
-                        if (!code.isEmpty()) {
-                            status->setText(code == "conflict" ? tr("This note changed elsewhere. Your draft "
-                                                                    "is kept. Copy it before reloading.")
-                                                               : message);
-                            return;
-                        }
-                        dialog->accept();
-                        refresh();
-                        metadata();
-                    });
-            });
-        connect(reload, &QPushButton::clicked, dialog,
-                [this, dialog, editor, status, current, uid, setBusy, fill] {
-                    if (editor->modified() &&
-                        QMessageBox::question(dialog, tr("Reload note?"),
-                                              tr("Replace your unsaved draft with the latest saved note?")) !=
-                            QMessageBox::Yes)
+        connect(editor, &NoteEditor::attachRequested, dialog,
+                [this, dialog, current, uid, setBusy, setStatus] {
+                    const auto paths = QFileDialog::getOpenFileNames(dialog, tr("Attach files"));
+                    if (paths.isEmpty())
                         return;
                     setBusy(true);
-                    backend.call(dialog, "memos.get", {{"uid", uid}},
-                                 [editor, status, current, setBusy,
-                                  fill](const QJsonValue &v, const QString &code, const QString &message) {
+                    setStatus(tr("Attaching files…"));
+                    backend.call(dialog, "attachments.add", {{"uid", uid}, {"paths", jsonPaths(paths)}},
+                                 [this, current, uid, paths, setBusy, setStatus](const QJsonValue &result,
+                                                                                const QString &code,
+                                                                                const QString &message) {
                                      setBusy(false);
                                      if (!code.isEmpty()) {
-                                         status->setText(message);
+                                         setStatus(message);
                                          return;
                                      }
-                                     *current = v.toObject();
-                                     editor->setContent((*current)["content"].toString());
-                                     fill(*current);
-                                     status->clear();
+                                     const auto object = result.toObject();
+                                     const auto updated = object["memo"].toObject();
+                                     if (!updated.isEmpty())
+                                         *current = updated;
+                                     const auto failures = fileFailures(result);
+                                     if (failures.isEmpty())
+                                         setStatus(tr("Attached %1 file(s).").arg(paths.size()));
+                                     else
+                                         setStatus(tr("Some files could not be attached:\n%1").arg(failures.join('\n')));
+                                     refresh(false, uid);
                                  });
                 });
-        connect(attach, &QPushButton::clicked, dialog, [this, dialog, status, current, uid, setBusy, fill] {
-            auto paths = QFileDialog::getOpenFileNames(dialog, tr("Attach files"));
-            if (paths.isEmpty())
-                return;
-            setBusy(true);
-            backend.call(dialog, "attachments.add", {{"uid", uid}, {"paths", jsonPaths(paths)}},
-                         [this, status, current, setBusy, fill](const QJsonValue &v, const QString &code,
-                                                                const QString &message) {
-                             setBusy(false);
-                             if (!code.isEmpty()) {
-                                 status->setText(message);
-                                 return;
-                             }
-                             (*current)["attachments"] = v.toObject()["memo"].toObject()["attachments"];
-                             fill(*current);
-                             status->setText(fileFailures(v).join('\n'));
-                             refresh();
-                         });
-        });
-        connect(remove, &QPushButton::clicked, dialog, [this, dialog, status, attachments, current, setBusy] {
-            auto item = attachments->currentItem();
-            if (!item)
-                return;
-            auto a = item->data(Qt::UserRole).toJsonObject();
-            if (QMessageBox::question(dialog, tr("Remove attachment?"), a["filename"].toString()) !=
-                QMessageBox::Yes)
-                return;
-            setBusy(true);
-            backend.call(dialog, "attachments.delete", {{"uid", a["uid"]}},
-                         [this, status, attachments, current, a,
-                          setBusy](const QJsonValue &, const QString &code, const QString &message) {
-                             setBusy(false);
-                             if (!code.isEmpty()) {
-                                 status->setText(message);
-                                 return;
-                             }
-                             auto values = (*current)["attachments"].toArray();
-                             for (int i = 0; i < values.size(); ++i)
-                                 if (values[i].toObject()["uid"] == a["uid"]) {
-                                     values.removeAt(i);
-                                     delete attachments->takeItem(i);
-                                     break;
-                                 }
-                             (*current)["attachments"] = values;
-                             refresh();
-                         });
-        });
+
+        connect(saveNote, &QPushButton::clicked, dialog,
+                [this, dialog, editor, current, uid, setBusy, setStatus] {
+                    setBusy(true);
+                    setStatus(tr("Saving…"));
+                    backend.call(dialog, "memos.update",
+                                 {{"uid", uid}, {"revision", (*current)["revision"]}, {"content", editor->content()}},
+                                 [this, dialog, uid, setBusy, setStatus](const QJsonValue &, const QString &code,
+                                                                        const QString &message) {
+                                     setBusy(false);
+                                     if (!code.isEmpty()) {
+                                         setStatus(code == "conflict"
+                                                       ? tr("This note changed elsewhere. Your draft is kept. "
+                                                            "Copy it before closing and reopen the note to compare changes.")
+                                                       : message);
+                                         return;
+                                     }
+                                     dialog->accept();
+                                     refresh(false, uid);
+                                     metadata();
+                                 });
+                });
         dialog->open();
     });
 }
@@ -1230,25 +1594,62 @@ void MainWindow::settingsPage() {
     auto form = new QFormLayout;
     form->setHorizontalSpacing(18);
     form->setVerticalSpacing(10);
-    auto appearance = new QComboBox;
+    form->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
+    form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+
+    auto appearance = new ArrowComboBox;
+    appearance->setObjectName("appearanceCombo");
     appearance->addItems({"System", "Light", "Dark"});
     appearance->setCurrentText(settings.value("appearance", "Light").toString());
+    appearance->setMinimumWidth(190);
+    appearance->setMaximumWidth(230);
+    appearance->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    appearance->setToolTip(tr("Follow the system theme or choose a fixed appearance."));
     form->addRow(tr("Theme"), appearance);
     connect(appearance, &QComboBox::currentTextChanged, this, [this](const QString &v) {
         settings.setValue("appearance", v);
         applyAppearance();
     });
-    auto font = new QFontComboBox;
+
+    auto font = new ArrowFontComboBox;
+    font->setObjectName("fontCombo");
+    font->setEditable(true);
+    font->setInsertPolicy(QComboBox::NoInsert);
     font->setCurrentFont(QFont(settings.value("fontFamily", qApp->font().family()).toString()));
+    font->setMinimumWidth(270);
+    font->setMaximumWidth(340);
+    font->setMaxVisibleItems(18);
+    font->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    font->setMinimumContentsLength(22);
+    if (font->completer()) {
+        font->completer()->setCaseSensitivity(Qt::CaseInsensitive);
+        font->completer()->setCompletionMode(QCompleter::PopupCompletion);
+        font->completer()->setFilterMode(Qt::MatchContains);
+    }
+    if (font->view()) {
+        font->view()->setMinimumWidth(font->minimumWidth());
+        font->view()->setMaximumWidth(font->maximumWidth());
+        font->view()->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        font->view()->setTextElideMode(Qt::ElideRight);
+    }
+    font->setToolTip(tr("Type part of a font name or open the list to browse installed fonts."));
     form->addRow(tr("Font"), font);
     connect(font, &QFontComboBox::currentFontChanged, this, [this](const QFont &f) {
+        if (f.family().trimmed().isEmpty())
+            return;
         settings.setValue("fontFamily", f.family());
         applyAppearance();
     });
-    auto size = new QSpinBox;
+
+    auto size = new ArrowSpinBox;
+    size->setObjectName("fontSizeSpin");
     size->setRange(9, 24);
     size->setValue(settings.value("fontSize", 10).toInt());
     size->setSuffix(tr(" pt"));
+    size->setMinimumWidth(105);
+    size->setMaximumWidth(120);
+    size->setAlignment(Qt::AlignLeft);
     form->addRow(tr("Text size"), size);
     connect(size, &QSpinBox::valueChanged, this, [this](int n) {
         settings.setValue("fontSize", n);
@@ -1369,44 +1770,73 @@ void MainWindow::applyAppearance() {
     const auto mode = settings.value("appearance", "Light").toString();
     const bool dark = mode == "Dark" ||
                       (mode == "System" && QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark);
-    QFont font(settings.value("fontFamily", qApp->font().family()).toString(),
-               settings.value("fontSize", 10).toInt());
-    qApp->setFont(font);
 
-    const QString bg = dark ? "#0e1622" : "#f5f7fb";
+    const QString requestedFamily = settings.value("fontFamily", qApp->font().family()).toString();
+    const int pointSize = settings.value("fontSize", 10).toInt();
+    const auto installedFamilies = QFontDatabase::families();
+    const QString family = installedFamilies.contains(requestedFamily, Qt::CaseInsensitive)
+                               ? requestedFamily
+                               : qApp->font().family();
+    qApp->setFont(QFont(family, pointSize));
+
+    // One semantic palette drives widgets, custom icons, calendars and custom painting.
+    // This avoids the old half-light/half-dark state where static icon pixmaps and
+    // QCalendarWidget kept colors from the theme that was active at construction.
+    const QString bg = dark ? "#0d1521" : "#f5f7fb";
     const QString surface = dark ? "#151f2d" : "#ffffff";
     const QString surfaceAlt = dark ? "#1a2738" : "#f8fafc";
     const QString rail = dark ? "#172435" : "#eef3f9";
     const QString border = dark ? "#2d3d52" : "#dfe6ef";
     const QString text = dark ? "#e8eef7" : "#172033";
     const QString muted = dark ? "#95a6bc" : "#6b778c";
-    const QString blue = "#087bff";
-    const QString blueSoft = dark ? "#173b63" : "#e7f2ff";
+    const QString disabled = dark ? "#64758b" : "#9aa6b5";
+    const QString blue = dark ? "#3b97ff" : "#087bff";
+    const QString blueSoft = dark ? "#183e69" : "#e7f2ff";
     const QString hover = dark ? "#22344a" : "#f0f5fb";
 
-    QPalette p;
-    p.setColor(QPalette::Window, QColor(bg));
-    p.setColor(QPalette::WindowText, QColor(text));
-    p.setColor(QPalette::Base, QColor(surface));
-    p.setColor(QPalette::AlternateBase, QColor(surfaceAlt));
-    p.setColor(QPalette::Text, QColor(text));
-    p.setColor(QPalette::Button, QColor(surface));
-    p.setColor(QPalette::ButtonText, QColor(text));
-    p.setColor(QPalette::Mid, QColor(border));
-    p.setColor(QPalette::PlaceholderText, QColor(muted));
-    p.setColor(QPalette::Highlight, QColor(blue));
-    p.setColor(QPalette::HighlightedText, Qt::white);
-    p.setColor(QPalette::Link, QColor(blue));
-    p.setColor(QPalette::ToolTipBase, QColor(surface));
-    p.setColor(QPalette::ToolTipText, QColor(text));
-    qApp->setPalette(p);
+    QPalette palette;
+    palette.setColor(QPalette::Window, QColor(bg));
+    palette.setColor(QPalette::WindowText, QColor(text));
+    palette.setColor(QPalette::Base, QColor(surface));
+    palette.setColor(QPalette::AlternateBase, QColor(surfaceAlt));
+    palette.setColor(QPalette::ToolTipBase, QColor(surface));
+    palette.setColor(QPalette::ToolTipText, QColor(text));
+    palette.setColor(QPalette::Text, QColor(text));
+    palette.setColor(QPalette::Button, QColor(surface));
+    palette.setColor(QPalette::ButtonText, QColor(text));
+    palette.setColor(QPalette::BrightText, QColor("#ffffff"));
+    palette.setColor(QPalette::Light, QColor(surfaceAlt));
+    palette.setColor(QPalette::Midlight, QColor(border));
+    palette.setColor(QPalette::Mid, QColor(border));
+    palette.setColor(QPalette::Dark, QColor(border));
+    palette.setColor(QPalette::Shadow, QColor(dark ? "#05080d" : "#c6ced9"));
+    palette.setColor(QPalette::PlaceholderText, QColor(muted));
+    palette.setColor(QPalette::Highlight, QColor(blue));
+    palette.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+    palette.setColor(QPalette::Link, QColor(blue));
+    palette.setColor(QPalette::LinkVisited, QColor(blue));
+    palette.setColor(QPalette::Disabled, QPalette::Text, QColor(disabled));
+    palette.setColor(QPalette::Disabled, QPalette::WindowText, QColor(disabled));
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(disabled));
+    palette.setColor(QPalette::Disabled, QPalette::PlaceholderText, QColor(disabled));
+    qApp->setPalette(palette);
+    QPixmapCache::clear();
 
     qApp->setStyleSheet(QString(R"QSS(
+        * { outline: none; }
         QWidget { color:%1; }
         QWidget#appRoot { background:%2; }
+        QSplitter#navigationSplitter { background:transparent; }
+        QSplitter#navigationSplitter::handle:horizontal {
+            background:transparent; width:7px; margin:10px 1px; border-radius:2px;
+        }
+        QSplitter#navigationSplitter::handle:horizontal:hover { background:%6; }
+        QSplitter#navigationSplitter::handle:horizontal:pressed { background:%12; }
+        QWidget#contentColumns { background:transparent; }
         QFrame#workspace { background:%3; border:1px solid %4; border-radius:14px; }
         QFrame#sideRail { background:%5; border:1px solid %4; border-radius:14px; }
         QWidget#rightColumn { background:transparent; }
+
         QFrame#card, QFrame#contentCard, QFrame#composerCard, QFrame#noteCard,
         QFrame#sideCard, QFrame#settingsCard, QFrame#attachmentRow {
             background:%3; border:1px solid %4; border-radius:12px;
@@ -1414,7 +1844,10 @@ void MainWindow::applyAppearance() {
         QFrame#noteCard:hover, QFrame#attachmentRow:hover { border-color:%6; }
         QFrame#quickRow { background:transparent; border:0; border-radius:8px; }
         QFrame#quickRow:hover { background:%7; }
-        QFrame#railSeparator { color:%4; background:%4; max-height:1px; border:0; margin:5px 4px; }
+        QFrame#railSeparator {
+            color:%4; background:%4; max-height:1px; border:0; margin:5px 4px;
+        }
+
         QLabel#brand { font-size:26px; font-weight:700; letter-spacing:-0.4px; }
         QLabel#heading { font-size:18px; font-weight:700; }
         QLabel#sideTitle, QLabel#sectionTitle { font-size:14px; font-weight:700; }
@@ -1422,89 +1855,188 @@ void MainWindow::applyAppearance() {
         QLabel#timestamp { font-size:12px; }
         QLabel#stagedFiles { font-size:12px; padding-left:4px; }
         QLabel#emptyState { color:%8; font-size:13px; }
-        QLabel#countBadge { background:%9; color:%6; border-radius:10px; min-width:24px; max-width:36px;
-                            padding:2px 5px; font-weight:700; }
+        QLabel#countBadge {
+            background:%9; color:%6; border-radius:10px; min-width:24px; max-width:36px;
+            padding:2px 5px; font-weight:700;
+        }
 
-        QLineEdit#globalSearch { background:%3; border:1px solid %4; border-radius:11px; padding:0 12px; }
+        QLineEdit#globalSearch {
+            background:%3; border:1px solid %4; border-radius:11px; padding:0 12px;
+        }
         QLineEdit#globalSearch:focus { border:1px solid %6; }
-        QTextEdit#composer { background:%3; border:1px solid %4; border-radius:9px; padding:8px; }
+        QTextEdit#composer {
+            background:%3; border:1px solid %4; border-radius:9px; padding:8px;
+        }
         QTextEdit#composer:focus { border:1px solid %6; }
         QTextBrowser#notePreview { background:transparent; border:0; padding:0; }
 
-        QPushButton, QToolButton { border:0; border-radius:8px; padding:7px 10px; background:transparent; }
+        QPushButton, QToolButton {
+            border:0; border-radius:8px; padding:7px 10px; background:transparent;
+        }
         QPushButton:hover, QToolButton:hover { background:%7; }
         QPushButton:pressed, QToolButton:pressed { background:%9; }
-        QPushButton#primary { background:%6; color:white; font-weight:700; padding:8px 15px; }
-        QPushButton#primary:hover { background:#006fe8; }
-        QPushButton#outlineButton { background:%3; border:1px solid %4; padding:7px 11px; }
+        QPushButton:disabled, QToolButton:disabled { color:%11; }
+        QPushButton#primary {
+            background:%6; color:white; font-weight:700; padding:8px 15px;
+        }
+        QPushButton#primary:hover { background:%12; }
+        QPushButton#outlineButton {
+            background:%3; border:1px solid %4; padding:7px 11px;
+        }
         QPushButton#outlineButton:hover { border-color:%6; background:%9; }
-        QPushButton#subtleButton, QPushButton#textAction, QPushButton#composerAction { color:%1; }
         QPushButton#subtleButton { color:%8; }
         QPushButton#composerAction { font-weight:600; padding:6px 8px; }
         QPushButton#textAction { font-weight:600; padding:5px 8px; }
-        QPushButton#tagChip { background:%9; color:%6; border-radius:12px; padding:4px 9px; font-weight:600; }
+        QPushButton#tagChip {
+            background:%9; color:%6; border-radius:12px; padding:4px 9px; font-weight:600;
+        }
         QPushButton#fileChip { background:%7; border:1px solid %4; padding:5px 9px; }
         QPushButton#fileLink { text-align:left; padding:0; font-weight:600; }
         QPushButton#fileLink:hover { color:%6; background:transparent; }
-        QPushButton#tagCard { text-align:left; background:%10; border:1px solid %4; padding:10px 12px; font-weight:600; }
+        QPushButton#tagCard {
+            text-align:left; background:%10; border:1px solid %4; padding:10px 12px; font-weight:600;
+        }
         QPushButton#tagCard:hover { border-color:%6; background:%9; }
         QPushButton#headerIconButton { padding:7px; }
         QToolButton#iconButton, QToolButton#dangerIconButton { padding:6px; }
-        QToolButton#dangerIconButton:hover { background:rgba(214,63,63,0.10); }
-        QToolButton#navButton { text-align:left; padding:9px 10px; }
-        QToolButton#navButton:checked { background:%9; color:%6; font-weight:700; }
+        QToolButton#decorativeIcon { padding:4px; background:transparent; }
+        QToolButton#decorativeIcon:hover { background:transparent; }
+        QToolButton#dangerIconButton:hover { background:rgba(214,63,63,0.12); }
+        QToolButton#navButton {
+            padding:9px 10px; color:%8;
+        }
+        QToolButton#navButton[compact="true"] { text-align:center; padding:9px; }
+        QToolButton#navButton[compact="false"] { text-align:left; padding:9px 10px; }
+        QToolButton#navButton:hover { color:%1; }
+        QToolButton#navButton:checked {
+            background:%9; color:%6; font-weight:700;
+        }
         QToolButton#quickButton { text-align:left; padding:7px 4px; }
 
         QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QFontComboBox {
-            background:%3; border:1px solid %4; border-radius:8px; padding:6px 8px; selection-background-color:%6;
+            background:%3; color:%1; border:1px solid %4; border-radius:8px;
+            padding:6px 8px; selection-background-color:%6; selection-color:white;
         }
-        QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {
-            border-color:%6;
+        QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus,
+        QSpinBox:focus, QFontComboBox:focus { border-color:%6; }
+        QLineEdit:disabled, QPlainTextEdit:disabled, QTextEdit:disabled, QComboBox:disabled,
+        QSpinBox:disabled, QFontComboBox:disabled { color:%11; background:%10; }
+        QComboBox::drop-down, QFontComboBox::drop-down {
+            border:0; width:30px; subcontrol-origin:padding; subcontrol-position:top right;
         }
-        QComboBox::drop-down, QSpinBox::up-button, QSpinBox::down-button { border:0; }
+        QComboBox::down-arrow, QFontComboBox::down-arrow { image:none; width:0; height:0; }
+        QSpinBox#fontSizeSpin { padding-right:30px; }
+        QSpinBox#fontSizeSpin::up-button {
+            border:0; width:28px; subcontrol-origin:border; subcontrol-position:top right; height:50%;
+        }
+        QSpinBox#fontSizeSpin::down-button {
+            border:0; width:28px; subcontrol-origin:border; subcontrol-position:bottom right; height:50%;
+        }
+        QSpinBox#fontSizeSpin::up-arrow, QSpinBox#fontSizeSpin::down-arrow { image:none; width:0; height:0; }
+        QComboBox QAbstractItemView, QFontComboBox QAbstractItemView {
+            background:%3; color:%1; border:1px solid %4; border-radius:8px;
+            selection-background-color:%9; selection-color:%6; padding:4px;
+        }
+        QComboBox QAbstractItemView::item, QFontComboBox QAbstractItemView::item {
+            min-height:25px; padding:3px 6px;
+        }
+
         QCheckBox { spacing:8px; }
         QCheckBox::indicator { width:17px; height:17px; }
 
-        QScrollArea, QWidget#rows { border:0; background:transparent; }
+        QScrollArea, QWidget#rows, QScrollArea#navScroll, QScrollArea#contentScroll {
+            border:0; background:transparent;
+        }
         QScrollBar:vertical { background:transparent; width:8px; margin:2px; }
         QScrollBar::handle:vertical { background:%4; min-height:28px; border-radius:4px; }
         QScrollBar::handle:vertical:hover { background:%8; }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }
 
-        QCalendarWidget { background:transparent; border:0; }
-        QCalendarWidget QWidget#qt_calendar_navigationbar { background:transparent; }
-        QCalendarWidget QToolButton { font-weight:700; padding:5px; }
-        QCalendarWidget QMenu { background:%3; border:1px solid %4; }
-        QCalendarWidget QSpinBox { background:transparent; border:0; }
-        QCalendarWidget QAbstractItemView { background:transparent; border:0; outline:0; selection-background-color:%9;
-                                            selection-color:%6; alternate-background-color:transparent; }
-        QCalendarWidget QAbstractItemView::item:hover { background:%7; border-radius:6px; }
+        /* QCalendarWidget owns an internal QTableView. Never make that view
+           transparent: on Windows/Fusion its viewport can otherwise expose a
+           black backing store in a light theme. */
+        QCalendarWidget {
+            background:%3; color:%1; border:0;
+        }
+        QCalendarWidget QWidget#qt_calendar_navigationbar {
+            background:%3; color:%1; border:0;
+        }
+        QCalendarWidget QToolButton {
+            color:%1; font-weight:700; padding:5px; background:transparent;
+        }
+        QCalendarWidget QToolButton:hover { background:%7; }
+        QCalendarWidget QMenu { background:%3; color:%1; border:1px solid %4; }
+        QCalendarWidget QSpinBox {
+            background:%3; color:%1; border:0; selection-background-color:%9;
+        }
+        QCalendarWidget QTableView, QCalendarWidget QAbstractItemView {
+            background:%3; alternate-background-color:%3; color:%1; border:0;
+            outline:0; selection-background-color:%9; selection-color:%6;
+        }
+        QCalendarWidget QTableView::item, QCalendarWidget QAbstractItemView::item {
+            background:%3; border-radius:6px; padding:3px;
+        }
+        QCalendarWidget QTableView::item:selected, QCalendarWidget QAbstractItemView::item:selected {
+            background:%9; color:%6;
+        }
+        QCalendarWidget QTableView::item:hover, QCalendarWidget QAbstractItemView::item:hover {
+            background:%7;
+        }
 
-        QMenu { background:%3; border:1px solid %4; padding:5px; }
+        QMenu { background:%3; color:%1; border:1px solid %4; padding:5px; }
         QMenu::item { padding:7px 22px 7px 10px; border-radius:6px; }
         QMenu::item:selected { background:%9; color:%6; }
+        QMenu::separator { height:1px; background:%4; margin:4px 7px; }
         QToolTip { background:%3; color:%1; border:1px solid %4; padding:5px; }
-        QMessageBox, QDialog { background:%2; }
-        QListWidget { background:%3; border:1px solid %4; border-radius:8px; padding:4px; }
+        QMessageBox, QDialog { background:%2; color:%1; }
+        QListWidget {
+            background:%3; color:%1; border:1px solid %4; border-radius:8px; padding:4px;
+        }
         QListWidget::item { padding:6px; border-radius:6px; }
         QListWidget::item:selected { background:%9; color:%6; }
-        QTabWidget::pane { border:1px solid %4; border-radius:8px; background:%3; top:-1px; }
+        QTabWidget::pane {
+            border:1px solid %4; border-radius:8px; background:%3; top:-1px;
+        }
         QTabBar::tab { background:transparent; padding:7px 12px; color:%8; }
         QTabBar::tab:selected { color:%6; font-weight:700; border-bottom:2px solid %6; }
-        QToolBar { background:%10; border:1px solid %4; border-radius:8px; spacing:2px; padding:3px; }
-        QToolBar QToolButton { padding:5px 7px; }
+        QToolBar#editorToolbar {
+            background:%10; border:1px solid %4; border-radius:10px; spacing:2px; padding:4px;
+        }
+        QToolBar#editorToolbar QToolButton {
+            min-width:30px; min-height:30px; padding:4px; border-radius:7px;
+        }
+        QToolBar#editorToolbar QToolButton:hover { background:%7; }
+        QToolBar#editorToolbar QToolButton:pressed { background:%9; }
+        QToolBar#editorToolbar::separator {
+            background:%4; width:1px; margin:6px 5px;
+        }
     )QSS")
-        .arg(text)
-        .arg(bg)
-        .arg(surface)
-        .arg(border)
-        .arg(rail)
-        .arg(blue)
-        .arg(hover)
-        .arg(muted)
-        .arg(blueSoft)
-        .arg(surfaceAlt));
+        .arg(text)        // %1
+        .arg(bg)          // %2
+        .arg(surface)     // %3
+        .arg(border)      // %4
+        .arg(rail)        // %5
+        .arg(blue)        // %6
+        .arg(hover)       // %7
+        .arg(muted)       // %8
+        .arg(blueSoft)    // %9
+        .arg(surfaceAlt)  // %10
+        .arg(disabled)    // %11
+        .arg(dark ? "#2c8fff" : "#006fe8")); // %12
+
+    // Existing buttons keep their QIcon objects, but PaletteIconEngine paints
+    // from the current application palette on every repaint.
+    for (auto button : findChildren<QAbstractButton *>())
+        button->update();
+
+    // QCalendarWidget caches several private child palettes and date formats.
+    // Re-apply both chrome and date colors immediately when the theme changes.
+    for (auto widget : findChildren<QCalendarWidget *>())
+        refreshCalendar(widget);
+
+    update();
 }
+
 void MainWindow::closeEvent(QCloseEvent *e) {
     if (backend.busy()) {
         QMessageBox::information(

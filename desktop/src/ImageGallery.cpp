@@ -88,7 +88,7 @@ void ImageGallery::paintEvent(QPaintEvent *) {
     const QColor imageSurface = palette().color(QPalette::AlternateBase);
     for (int i = 0; i < tiles.size(); ++i) {
         const auto r = boxes[i].adjusted(1, 1, -1, -1);
-        p.setPen(QPen(i == target ? QColor("#087bff") : border, i == target ? 2 : 1));
+        p.setPen(QPen(i == target ? palette().color(QPalette::Highlight) : border, i == target ? 2 : 1));
         p.setBrush(surface);
         p.drawRoundedRect(r, 10, 10);
         p.save();
@@ -116,7 +116,7 @@ void ImageGallery::paintEvent(QPaintEvent *) {
                    fontMetrics().elidedText(tiles[i].name, Qt::ElideMiddle, footerRect.width()));
         if (i == target) {
             const int x = target > dragging ? r.right() - 2 : r.left();
-            p.fillRect(QRect(x, r.top() + 7, 3, r.height() - 14), QColor("#087bff"));
+            p.fillRect(QRect(x, r.top() + 7, 3, r.height() - 14), palette().color(QPalette::Highlight));
         }
     }
 }

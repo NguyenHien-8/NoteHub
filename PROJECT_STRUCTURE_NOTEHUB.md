@@ -112,9 +112,9 @@ Owns the desktop shell and page routing:
 - Settings;
 - right-side calendar + Quick Filters.
 
-The redesign uses fixed responsive breakpoints rather than continuously shrinking controls. The left rail is 68 px compact or 212 px expanded. The right context panel is hidden below 1180 px. This preserves center workspace width and avoids clipped labels.
+The navigation rail is resizable through a narrow `QSplitter` handle (64–280 px). Under 136 px it becomes icon-only; wider rails show icon + text. The last expanded width is persisted and the header toggle jumps between 68 px and that saved expanded width. The right context panel is hidden below 1180 px.
 
-`MainWindow` also owns the application palette/QSS. Standard Qt platform icons were replaced by high-DPI line icons painted with `QPainter`, so Windows no longer shows a mixture of old Explorer-style folder/file icons inside the modern shell.
+`MainWindow` also owns the application palette/QSS. Standard Qt platform icons were replaced by `QPainter` glyphs served through a palette-aware `QIconEngine`, so icons repaint correctly after Light/Dark/System changes. The calendar receives the same semantic palette explicitly, including its private item viewport and navigation arrows.
 
 ### `desktop/src/ImageGallery.*`
 
@@ -122,7 +122,7 @@ Loads previews asynchronously and caches bounded decoded images. Gallery geometr
 
 ### `desktop/src/NoteEditor.*`
 
-Provides rich text plus Markdown-source editing. The editor uses the same application theme, a fixed non-floating toolbar and document-style tabs. Existing revision/conflict semantics are unchanged because saving still goes through the Go backend.
+Provides rich text plus Markdown-source editing. The editor uses palette-aware vector toolbar icons and exposes attachment import as a toolbar action. Clipboard HTML is accepted only when its rendered line structure matches the clipboard text; otherwise multi-line plain text is used to prevent flattening. Rich save performs an HTML line-round-trip guard. The Edit Note dialog no longer contains Reload Latest, a separate attachment list or attachment/remove buttons. Existing revision/conflict semantics are unchanged because saving still goes through the Go backend.
 
 ## Go backend responsibilities
 
@@ -164,15 +164,18 @@ Optional loopback HTTP sharing server.
 
 ## GUI algorithms changed in the current redesign
 
-1. **Responsive shell**: compact rail under 980 px or by user preference; right panel under 1180 px; center workspace receives remaining width.
-2. **Stable icon system**: `QPainter` renders normal/selected high-DPI pixmaps instead of platform standard icons.
-3. **Visual hierarchy**: app background → rail → workspace/context cards → content cards; accent color only for interaction/focus.
-4. **Attachment staging**: shows a compact count plus tooltip rather than wrapping all staged filenames into the composer.
-5. **Timeline preview**: note text preview is bounded to keep scanning predictable; full editing stays in the editor dialog.
-6. **Gallery grid**: 1–4 columns, equal tile widths across all rows, preview height bounded to 130–205 px.
-7. **Optimistic favorite UX**: favorite button changes immediately, is locked while saving and reverts on backend error.
-8. **Tags**: card grid instead of full-width centered rows.
-9. **Settings**: grouped by Appearance, Data & backup and Local sharing.
-10. **Quick Filters**: live note/favorite/shared counts are shown in the right context panel instead of a permanent status bar.
+1. **Draggable shell**: 64–280 px splitter-driven navigation rail; icon-only below 136 px; toggle restores the last expanded width; right panel hides below 1180 px.
+2. **Theme-aware icon engine**: `QPainter` glyphs resolve neutral/active/disabled/checked colors from the live palette; Home/Attachments/Settings use explicit house/paperclip/gear shapes.
+3. **Calendar theming**: calendar table viewport, navigation arrows, weekdays/weekends, adjacent-month dates and note-day accents are regenerated from semantic theme colors; no transparent black backing store in Light mode.
+4. **Visual hierarchy**: app background → rail → workspace/context cards → content cards; accent color only for interaction/focus.
+5. **Viewport anchor after edits**: memo refresh records the edited card's viewport Y position and restores the rebuilt card to that position instead of jumping to the first note.
+6. **Attachment staging**: shows a compact count plus tooltip rather than wrapping all staged filenames into the composer.
+7. **Timeline preview**: note text preview is bounded and captures wheel input at its own top/bottom boundaries so hovering one memo never scrolls adjacent cards.
+8. **Gallery grid**: 1–4 columns, equal tile widths across all rows, preview height bounded to 130–205 px; drag target uses the current theme accent.
+9. **Optimistic favorite UX**: favorite button changes immediately, is locked while saving and reverts on backend error.
+10. **Compact settings controls**: Theme/Font combos have dynamic down/up chevrons, font popup width matches the field, editable font search uses substring completion, and Text size has explicit up/down steppers.
+11. **Tags**: card grid instead of full-width centered rows.
+12. **Quick Filters**: live note/favorite/shared counts are shown in the right context panel instead of a permanent status bar.
+13. **Rich paste/editor toolbar**: modern vector formatting icons, toolbar attachment action, HTML/plain-text line-structure validation and removal of the old attachment/reload controls from Edit Note.
 
 See `docs/ARCHITECTURE.md` for the algorithms and interaction rationale in detail.
