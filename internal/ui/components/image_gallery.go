@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -14,12 +15,11 @@ import (
 )
 
 const (
-	galleryGap             float32 = 10
-	galleryTileHeight      float32 = 300
-	galleryMinWidth        float32 = 300
-	galleryMaxContentWidth float32 = 960
-	gallerySingleMaxWidth  float32 = 720
-	galleryFooterHeight    float32 = 32
+	galleryGap          float32 = 10
+	galleryTileHeight   float32 = 300
+	galleryMinWidth     float32 = 160
+	galleryColumnWidth  float32 = 230
+	galleryFooterHeight float32 = 32
 )
 
 // ImageGallery renders every image attachment as a compact visual tile. When a
@@ -35,11 +35,32 @@ type ImageGallery struct {
 	onDelete    func(domain.Attachment)
 	dragSource  *imageTile
 	dropTarget  *imageTile
+	ghost       *fyne.Container
+	ghostImage  *canvas.Image
+	ghostShade  *canvas.Rectangle
+	ghostBorder *canvas.Rectangle
+	marker      *canvas.Rectangle
+	frames      []galleryFrame
+	frameWidth  float32
+	frameHeight float32
 }
 
 func NewImageGallery(attachments []domain.Attachment, thumbnails map[int64]image.Image, open func(domain.Attachment), reorder func([]int64)) *ImageGallery {
 	g := &ImageGallery{onOpen: open, onReorder: reorder}
 	g.ExtendBaseWidget(g)
+	g.ghostImage = canvas.NewImageFromImage(nil)
+	g.ghostImage.FillMode = canvas.ImageFillContain
+	g.ghostImage.Translucency = 0.08
+	g.ghostShade = canvas.NewRectangle(color.NRGBA{A: 40})
+	g.ghostShade.CornerRadius = 10
+	g.ghostBorder = canvas.NewRectangle(color.NRGBA{R: 238, G: 246, B: 255, A: 245})
+	g.ghostBorder.CornerRadius = 8
+	g.ghostBorder.StrokeColor, g.ghostBorder.StrokeWidth = primaryBlue, 2
+	g.ghost = container.NewWithoutLayout(g.ghostShade, g.ghostBorder, g.ghostImage)
+	g.ghost.Hide()
+	g.marker = canvas.NewRectangle(primaryBlue)
+	g.marker.CornerRadius = 2
+	g.marker.Hide()
 	g.SetAttachments(attachments, thumbnails)
 	return g
 }
@@ -59,6 +80,7 @@ func (g *ImageGallery) SetAttachments(attachments []domain.Attachment, thumbnail
 	g.attachments = append([]domain.Attachment(nil), attachments...)
 	g.thumbnails = thumbnails
 	g.tiles = nil
+	g.frames = nil
 	for _, attachment := range g.attachments {
 		if !strings.HasPrefix(attachment.MIMEType, "image/") {
 			continue
@@ -69,9 +91,14 @@ func (g *ImageGallery) SetAttachments(attachments []domain.Attachment, thumbnail
 		} else {
 			tile.object = &draggableImageTile{imageTile: tile}
 		}
+		// Extend the actual widget in the render tree, not the embedded tile.
+		// Two renderer identities sharing the same image cause stale geometry.
+		tile.ExtendBaseWidget(tile.object.(fyne.Widget))
 		g.tiles = append(g.tiles, tile)
 	}
 	g.dragSource, g.dropTarget = nil, nil
+	g.ghost.Hide()
+	g.marker.Hide()
 	g.Refresh()
 }
 
@@ -83,20 +110,85 @@ func (g *ImageGallery) MinSize() fyne.Size {
 	if len(g.tiles) == 0 {
 		return fyne.NewSize(0, 0)
 	}
-	columns := 1
-	if len(g.tiles) > 1 {
-		columns = 2
+	_, height := g.geometry(g.layoutWidth())
+	return fyne.NewSize(galleryMinWidth, height)
+}
+
+func (g *ImageGallery) layoutWidth() float32 {
+	if g.Size().Width > 0 {
+		return g.Size().Width
 	}
-	rows := (len(g.tiles) + columns - 1) / columns
-	return fyne.NewSize(galleryMinWidth, float32(rows)*galleryTileHeight+float32(max(0, rows-1))*galleryGap)
+	return galleryColumnWidth
+}
+
+// Height depends on width. Invalidating the canvas when the width changes lets
+// enclosing cards and scroll areas remeasure rows after sidebar/window resizing.
+func (g *ImageGallery) Resize(size fyne.Size) {
+	previous := g.MinSize().Height
+	g.BaseWidget.Resize(size)
+	if previous != g.MinSize().Height {
+		canvas.Refresh(g)
+	}
+}
+
+type galleryFrame struct {
+	position fyne.Position
+	size     fyne.Size
+}
+
+// Fill every row, including the last, with widths weighted by image aspect.
+// Height is bounded so a lone portrait never creates a screen-tall card.
+// Contain inside each frame keeps all of the original image visible.
+func (g *ImageGallery) geometry(width float32) ([]galleryFrame, float32) {
+	count := len(g.tiles)
+	if count == 0 {
+		return nil, 0
+	}
+	width = max(1, width)
+	if len(g.frames) == count && width == g.frameWidth {
+		return g.frames, g.frameHeight
+	}
+	columns := min(count, max(1, int((width+galleryGap)/(galleryColumnWidth+galleryGap))))
+	frames := make([]galleryFrame, count)
+	y := float32(0)
+	for first := 0; first < count; first += columns {
+		end := min(count, first+columns)
+		ratios := make([]float32, end-first)
+		total := float32(0)
+		for i := first; i < end; i++ {
+			ratio := float32(4.0 / 3.0)
+			if img := g.tiles[i].preview.Image; img != nil && img.Bounds().Dy() > 0 {
+				ratio = float32(img.Bounds().Dx()) / float32(img.Bounds().Dy())
+			}
+			// Extreme panoramas/portraits still get usable frames, with contain
+			// preserving their full content inside them.
+			ratios[i-first] = min(float32(2.2), max(float32(0.65), ratio))
+			total += ratios[i-first]
+		}
+		usable := max(1, width-float32(end-first-1)*galleryGap)
+		previewHeight := min(galleryTileHeight, usable/total)
+		height := previewHeight + galleryFooterHeight + 16
+		x := float32(0)
+		for i := first; i < end; i++ {
+			w := usable * ratios[i-first] / total
+			if i == end-1 {
+				w = width - x // absorb rounding so the final frame meets the edge
+			}
+			frames[i] = galleryFrame{fyne.NewPos(x, y), fyne.NewSize(w, height)}
+			x += w + galleryGap
+		}
+		y += height + galleryGap
+	}
+	g.frames, g.frameWidth, g.frameHeight = frames, width, y-galleryGap
+	return frames, g.frameHeight
 }
 
 func (g *ImageGallery) canvasObjects() []fyne.CanvasObject {
-	objects := make([]fyne.CanvasObject, 0, len(g.tiles))
+	objects := make([]fyne.CanvasObject, 0, len(g.tiles)+2)
 	for _, tile := range g.tiles {
 		objects = append(objects, tile.object)
 	}
-	return objects
+	return append(objects, g.marker, g.ghost)
 }
 
 func (g *ImageGallery) targetAt(point fyne.Position) *imageTile {
@@ -116,16 +208,57 @@ func (g *ImageGallery) beginDrag(source *imageTile, point fyne.Position) {
 	if g.onReorder == nil || !source.primaryDown {
 		return
 	}
-	target := g.targetAt(point)
-	if target == nil || target == source {
+	if g.dragSource != source {
 		g.clearDragFeedback()
-		return
+		g.dragSource = source
+		source.dragging, source.suppressTap = true, true
+		source.Refresh()
+		g.ghostImage.Image = source.preview.Image
+		g.ghostImage.Refresh()
+		g.ghost.Show()
 	}
-	g.dragSource, g.dropTarget = source, target
-	source.dragging = true
-	target.dropTarget = true
-	source.Refresh()
-	target.Refresh()
+	target := g.targetAt(point)
+	if target == source {
+		target = nil
+	}
+	if g.dropTarget != target {
+		if g.dropTarget != nil {
+			g.dropTarget.dropTarget = false
+			g.dropTarget.Refresh()
+		}
+		g.dropTarget = target
+		if target != nil {
+			target.dropTarget = true
+			target.Refresh()
+		}
+	}
+	g.moveGhost(source, point)
+	if target == nil {
+		g.marker.Hide()
+	} else {
+		x := target.Position().X
+		if target.Position().Y > source.Position().Y || (target.Position().Y == source.Position().Y && x > source.Position().X) {
+			x += target.Size().Width - 3
+		}
+		g.marker.Move(fyne.NewPos(x, target.Position().Y+4))
+		g.marker.Resize(fyne.NewSize(3, max(0, target.Size().Height-8)))
+		g.marker.Show()
+	}
+}
+
+func (g *ImageGallery) moveGhost(source *imageTile, point fyne.Position) {
+	size := source.Size()
+	scale := min(float32(0.72), float32(220)/max(1, size.Width))
+	w, h := max(float32(1), size.Width*scale), max(float32(1), (size.Height-galleryFooterHeight)*scale)
+	x := max(float32(0), min(g.Size().Width-w-5, point.X-w/2))
+	y := max(float32(0), min(g.Size().Height-h-5, point.Y-h/2))
+	g.ghostShade.Move(fyne.NewPos(4, 5))
+	g.ghostShade.Resize(fyne.NewSize(w, h))
+	g.ghostBorder.Resize(fyne.NewSize(w, h))
+	g.ghostImage.Move(fyne.NewPos(6, 6))
+	g.ghostImage.Resize(fyne.NewSize(max(0, w-12), max(0, h-12)))
+	g.ghost.Resize(fyne.NewSize(w+5, h+5))
+	g.ghost.Move(fyne.NewPos(x, y))
 }
 
 func (g *ImageGallery) endDrag(source *imageTile) {
@@ -184,6 +317,8 @@ func (g *ImageGallery) clearDragFeedback() {
 		}
 	}
 	g.dragSource, g.dropTarget = nil, nil
+	g.ghost.Hide()
+	g.marker.Hide()
 }
 
 type imageGalleryRenderer struct {
@@ -192,28 +327,10 @@ type imageGalleryRenderer struct {
 }
 
 func (r *imageGalleryRenderer) Layout(size fyne.Size) {
-	count := len(r.gallery.tiles)
-	if count == 0 {
-		return
-	}
-	columns := 1
-	contentWidth := min(size.Width, gallerySingleMaxWidth)
-	if count > 1 {
-		columns = 2
-		contentWidth = min(size.Width, galleryMaxContentWidth)
-	}
-	width := contentWidth
-	if columns == 2 {
-		width = (contentWidth - galleryGap) / 2
-	}
-	xOffset := max(float32(0), (size.Width-contentWidth)/2)
+	frames, _ := r.gallery.geometry(size.Width)
 	for index, tile := range r.gallery.tiles {
-		column := index % columns
-		row := index / columns
-		x := xOffset + float32(column)*(width+galleryGap)
-		y := float32(row) * (galleryTileHeight + galleryGap)
-		tile.object.Move(fyne.NewPos(x, y))
-		tile.object.Resize(fyne.NewSize(width, galleryTileHeight))
+		tile.object.Move(frames[index].position)
+		tile.object.Resize(frames[index].size)
 	}
 }
 
@@ -251,7 +368,6 @@ func newImageTile(gallery *ImageGallery, attachment domain.Attachment, thumbnail
 	t.name = widget.NewLabel(boundedText(attachment.Filename, 28))
 	t.name.Truncation = fyne.TextTruncateEllipsis
 	t.name.Importance = widget.LowImportance
-	t.ExtendBaseWidget(t)
 	return t
 }
 
@@ -276,7 +392,7 @@ func (t *imageTile) CreateRenderer() fyne.WidgetRenderer {
 	return r
 }
 
-func (t *imageTile) MinSize() fyne.Size { return fyne.NewSize(145, galleryTileHeight) }
+func (t *imageTile) MinSize() fyne.Size { return fyne.NewSize(1, galleryFooterHeight+16) }
 
 func (t *imageTile) Tapped(*fyne.PointEvent) {
 	if t.suppressTap {
@@ -297,6 +413,8 @@ func (t *imageTile) MouseDown(event *desktop.MouseEvent) {
 func (t *imageTile) MouseUp(*desktop.MouseEvent) { t.primaryDown = false }
 
 type draggableImageTile struct{ *imageTile }
+
+func (d *draggableImageTile) Cursor() desktop.Cursor { return desktop.PointerCursor }
 
 func (d *draggableImageTile) Dragged(event *fyne.DragEvent) {
 	if event == nil || !d.primaryDown {
@@ -367,6 +485,11 @@ func (r *imageTileRenderer) Refresh() {
 		r.remove.Show()
 	}
 	r.background.Refresh()
+	if r.tile.dragging {
+		r.tile.preview.Translucency = 0.65
+	} else {
+		r.tile.preview.Translucency = 0
+	}
 	r.tile.preview.Refresh()
 	r.tile.name.Refresh()
 	r.Layout(r.tile.Size())

@@ -17,16 +17,23 @@ import (
 type Sidebar struct {
 	Object   fyne.CanvasObject
 	menu     *fyne.Container
-	tags     *container.Scroll
-	buttons  map[string]*widget.Button
+	tags     *fyne.Container
+	scroll   *container.Scroll
+	heading  fyne.CanvasObject
+	compactTags *HintButton
+	buttons  map[string]*HintButton
+	compact  bool
 	onTag    func(string)
+	onAddTag func()
 	selected string
 	tagData  []domain.TagCount
+	tagPopup *widget.PopUp
+	popupTags *fyne.Container
+	popupAdd *widget.Button
 }
 
 func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *Sidebar {
-	s := &Sidebar{menu: container.NewVBox(), tags: container.NewVScroll(sidebarTags(nil, onTag)), buttons: map[string]*widget.Button{}, onTag: onTag}
-	s.tags.SetMinSize(fyne.NewSize(180, 160))
+	s := &Sidebar{menu: container.NewVBox(), tags: container.NewStack(sidebarTags(nil, onTag)), buttons: map[string]*HintButton{}, onTag: onTag, onAddTag: onAddTag}
 	for _, item := range []struct {
 		name string
 		icon fyne.Resource
@@ -35,7 +42,7 @@ func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *S
 		{"Attachments", theme.MailAttachmentIcon()}, {"Tags", theme.ListIcon()}, {"Settings", theme.SettingsIcon()},
 	} {
 		id := strings.ToLower(item.name)
-		button := widget.NewButtonWithIcon(item.name, item.icon, func() {
+		button := NewHintButton(item.name, item.icon, func() {
 			if onNavigate != nil {
 				onNavigate(id)
 			}
@@ -54,11 +61,71 @@ func NewSidebar(onNavigate func(string), onTag func(string), onAddTag func()) *S
 	if onAddTag == nil {
 		add.Disable()
 	}
-	heading := container.NewBorder(nil, nil, nil, add, widget.NewLabelWithStyle("My Tags", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-	top := container.New(layout.NewCustomPaddedVBoxLayout(16), s.menu, widget.NewSeparator(), heading)
-	s.Object = container.NewBorder(top, nil, nil, nil, s.tags)
+	s.heading = container.NewBorder(nil, nil, nil, add, widget.NewLabelWithStyle("My Tags", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	s.compactTags = NewHintButton("My Tags", theme.FolderOpenIcon(), s.showTags)
+	s.compactTags.SetText("")
+	s.compactTags.Importance = widget.LowImportance
+	s.compactTags.Hide()
+	content := container.New(layout.NewCustomPaddedVBoxLayout(12), s.menu, widget.NewSeparator(), s.heading, s.tags, s.compactTags)
+	s.scroll = container.NewVScroll(content)
+	s.Object = s.scroll
 	s.SetSelected("home")
 	return s
+}
+
+func (s *Sidebar) SetHintLayer(hints *HintLayer) {
+	for _, button := range s.buttons { button.SetHintLayer(hints) }
+	s.compactTags.SetHintLayer(hints)
+}
+
+func (s *Sidebar) SetCompact(compact bool) {
+	if s.compact == compact { return }
+	s.compact = compact
+	for _, button := range s.buttons {
+		button.hideHint()
+		if compact {
+			button.Alignment = widget.ButtonAlignCenter
+			button.SetText("")
+		} else {
+			button.Alignment = widget.ButtonAlignLeading
+			button.SetText(button.Hint)
+		}
+	}
+	if compact {
+		s.heading.Hide()
+		s.tags.Hide()
+		s.compactTags.Show()
+	} else {
+		s.heading.Show()
+		s.tags.Show()
+		s.compactTags.Hide()
+		if s.tagPopup != nil { s.tagPopup.Hide() }
+	}
+	s.scroll.Offset = fyne.Position{}
+	s.scroll.Refresh()
+}
+
+func (s *Sidebar) showTags() {
+	canvas := fyne.CurrentApp().Driver().CanvasForObject(s.compactTags)
+	if canvas == nil { return }
+	if s.tagPopup != nil { s.tagPopup.Hide() }
+	selectTag := func(tag string) {
+		s.tagPopup.Hide()
+		if s.onTag != nil { s.onTag(tag) }
+	}
+	s.popupTags = container.NewStack(sidebarTags(s.tagData, selectTag))
+	s.popupAdd = widget.NewButtonWithIcon("Add tag", theme.ContentAddIcon(), func() {
+		s.tagPopup.Hide()
+		if s.onAddTag != nil { s.onAddTag() }
+	})
+	if s.onAddTag == nil { s.popupAdd.Disable() }
+	close := widget.NewButtonWithIcon("", theme.CancelIcon(), func() { s.tagPopup.Hide() })
+	close.Importance = widget.LowImportance
+	heading := container.NewBorder(nil, nil, nil, close, widget.NewLabelWithStyle("My Tags", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	content := container.NewBorder(heading, s.popupAdd, nil, nil, container.NewVScroll(s.popupTags))
+	s.tagPopup = widget.NewPopUp(content, canvas)
+	s.tagPopup.Resize(fyne.NewSize(min(280, canvas.Size().Width-20), min(360, canvas.Size().Height-20)))
+	s.tagPopup.ShowAtRelativePosition(fyne.NewPos(s.compactTags.Size().Width+12, 0), s.compactTags)
 }
 
 func (s *Sidebar) SetSelected(selected string) {
@@ -83,8 +150,15 @@ func (s *Sidebar) SetTags(tags []domain.TagCount) {
 		return
 	}
 	s.tagData = append([]domain.TagCount(nil), tags...)
-	s.tags.Content = sidebarTags(tags, s.onTag)
+	s.tags.Objects = []fyne.CanvasObject{sidebarTags(tags, s.onTag)}
 	s.tags.Refresh()
+	if s.tagPopup != nil && s.tagPopup.Visible() {
+		s.popupTags.Objects = []fyne.CanvasObject{sidebarTags(tags, func(tag string) {
+			s.tagPopup.Hide()
+			if s.onTag != nil { s.onTag(tag) }
+		})}
+		s.popupTags.Refresh()
+	}
 }
 
 func sidebarTags(tags []domain.TagCount, onTag func(string)) fyne.CanvasObject {

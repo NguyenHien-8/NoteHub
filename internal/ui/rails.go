@@ -11,6 +11,7 @@ import (
 
 const (
 	defaultLeftRailWidth  float32 = 250
+	compactLeftRailWidth  float32 = 64
 	defaultRightRailWidth float32 = 280
 	minLeftRailWidth      float32 = 180
 	maxLeftRailWidth      float32 = 420
@@ -30,10 +31,12 @@ type Rails struct {
 	leftWidth           float32
 	rightWidth          float32
 	leftCollapsed       bool
+	leftCompact         bool
 	rightCollapsed      bool
 	preferRightNarrow   bool
 	leftHandle          *railHandle
 	rightHandle         *railHandle
+	OnLeftCompactChanged func(bool)
 }
 
 func NewRails(left, center, right fyne.CanvasObject, prefs fyne.Preferences) *Rails {
@@ -71,12 +74,13 @@ func (r *Rails) MinSize() fyne.Size {
 }
 
 func (r *Rails) LeftCollapsed() bool  { return r.leftCollapsed }
+func (r *Rails) LeftCompact() bool    { return r.leftCompact }
 func (r *Rails) RightCollapsed() bool { return r.rightCollapsed }
 
 func (r *Rails) ToggleLeft() {
-	if !r.leftCollapsed && !r.left.Visible() {
-		// The rail is only hidden by the narrow-window policy. Make it the
-		// preferred visible rail without converting that temporary state into a
+	if !r.leftCollapsed && r.leftCompact {
+		// The rail is only compacted by the narrow-window policy. Make it the
+		// preferred expanded rail without converting that temporary state into a
 		// persisted manual collapse.
 		r.preferRightNarrow = false
 	} else {
@@ -107,7 +111,7 @@ func (r *Rails) ToggleRight() {
 }
 
 func (r *Rails) dragLeft(delta float32) {
-	if r.leftCollapsed || !r.left.Visible() {
+	if r.leftCompact {
 		return
 	}
 	maxAllowed := r.Size().Width - minCenterWidth - railHandleWidth
@@ -124,9 +128,7 @@ func (r *Rails) dragRight(delta float32) {
 		return
 	}
 	maxAllowed := r.Size().Width - minCenterWidth - railHandleWidth
-	if r.left.Visible() {
-		maxAllowed -= r.leftWidth + railHandleWidth
-	}
+	maxAllowed -= r.left.Size().Width + railHandleWidth
 	maxAllowed = min32(maxRightRailWidth, max32(minRightRailWidth, maxAllowed))
 	// The right divider moves left when the right rail grows.
 	r.rightWidth = clamp32(r.rightWidth-delta, minRightRailWidth, maxAllowed)
@@ -152,52 +154,63 @@ type railsRenderer struct {
 
 func (r *railsRenderer) Layout(size fyne.Size) {
 	owner := r.rails
-	showLeft := !owner.leftCollapsed
+	expandLeft := !owner.leftCollapsed
 	showRight := !owner.rightCollapsed
 
-	needed := minCenterWidth
-	if showLeft {
-		needed += owner.leftWidth + railHandleWidth
+	needed := minCenterWidth + railHandleWidth
+	if expandLeft {
+		needed += owner.leftWidth
+	} else {
+		needed += compactLeftRailWidth
 	}
 	if showRight {
 		needed += owner.rightWidth + railHandleWidth
 	}
-	if size.Width < needed && showLeft && showRight {
+	if size.Width < needed && expandLeft && showRight {
 		if owner.preferRightNarrow {
-			showLeft = false
+			expandLeft = false
 		} else {
 			showRight = false
 		}
 	}
-	// If one rail still consumes too much room, suppress it automatically. This
-	// does not change the user's manual collapse preference.
-	if showLeft && size.Width < owner.leftWidth+railHandleWidth+minCenterWidth {
-		showLeft = false
+	// Navigation remains reachable even when there is no room for its labels.
+	// Automatic compact mode does not change the manual collapse preference.
+	if expandLeft && size.Width < owner.leftWidth+railHandleWidth+minCenterWidth {
+		expandLeft = false
 	}
-	if showRight && size.Width < owner.rightWidth+railHandleWidth+minCenterWidth {
+	leftWidth := compactLeftRailWidth
+	if expandLeft {
+		leftWidth = owner.leftWidth
+	}
+	if showRight && size.Width < leftWidth+minRightRailWidth+2*railHandleWidth+minCenterWidth {
 		showRight = false
+	}
+	rightWidth := min32(owner.rightWidth, size.Width-leftWidth-2*railHandleWidth-minCenterWidth)
+	if compact := !expandLeft; owner.leftCompact != compact {
+		owner.leftCompact = compact
+		if owner.OnLeftCompactChanged != nil {
+			owner.OnLeftCompactChanged(compact)
+		}
 	}
 
 	x := float32(0)
-	setVisible(owner.left, showLeft)
-	setVisible(owner.leftHandle, showLeft)
+	setVisible(owner.left, true)
+	setVisible(owner.leftHandle, expandLeft)
 	setVisible(owner.right, showRight)
 	setVisible(owner.rightHandle, showRight)
 
-	if showLeft {
-		owner.left.Move(fyne.NewPos(x, 0))
-		owner.left.Resize(fyne.NewSize(owner.leftWidth, size.Height))
-		x += owner.leftWidth
-		owner.leftHandle.Move(fyne.NewPos(x, 0))
-		owner.leftHandle.Resize(fyne.NewSize(railHandleWidth, size.Height))
-		x += railHandleWidth
-	}
+	owner.left.Move(fyne.NewPos(x, 0))
+	owner.left.Resize(fyne.NewSize(leftWidth, size.Height))
+	x += leftWidth
+	owner.leftHandle.Move(fyne.NewPos(x, 0))
+	owner.leftHandle.Resize(fyne.NewSize(railHandleWidth, size.Height))
+	x += railHandleWidth
 
 	rightStart := size.Width
 	if showRight {
-		rightStart -= owner.rightWidth
+		rightStart -= rightWidth
 		owner.right.Move(fyne.NewPos(rightStart, 0))
-		owner.right.Resize(fyne.NewSize(owner.rightWidth, size.Height))
+		owner.right.Resize(fyne.NewSize(rightWidth, size.Height))
 		rightStart -= railHandleWidth
 		owner.rightHandle.Move(fyne.NewPos(rightStart, 0))
 		owner.rightHandle.Resize(fyne.NewSize(railHandleWidth, size.Height))

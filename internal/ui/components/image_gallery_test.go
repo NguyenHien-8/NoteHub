@@ -47,12 +47,68 @@ func TestGalleryShowsEveryImageAndAttachmentKeyedThumbnail(t *testing.T) {
 	if opened != 12 {
 		t.Fatalf("tap opened attachment %d", opened)
 	}
-	if g.tiles[1].Position().Y != 0 || g.tiles[2].Position().Y == 0 || g.MinSize().Width > 360 {
-		t.Fatal("gallery did not fit two visual tiles in the available column")
+	if g.tiles[1].Position().Y == 0 || g.MinSize().Width > 360 {
+		t.Fatal("narrow gallery should keep images readable in one column")
 	}
 	g.Resize(fyne.NewSize(1400, 650))
-	if g.tiles[0].Size().Width > 480 || g.tiles[0].Position().X < 200 {
-		t.Fatalf("wide gallery stretched previews instead of centering a bounded grid: pos=%v size=%v", g.tiles[0].Position(), g.tiles[0].Size())
+	last := g.tiles[len(g.tiles)-1]
+	if g.tiles[0].Position().X != 0 || last.Position().Y != 0 || last.Position().X+last.Size().Width != 1400 {
+		t.Fatalf("wide gallery should use its full row: last pos=%v size=%v", last.Position(), last.Size())
+	}
+}
+
+// A resize must change the row count and minimum height together, otherwise
+// the last row paints over the next note or becomes unreachable by scrolling.
+func TestGalleryReflowsAndContainsEveryPreviewAfterRepeatedResize(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	attachments := []domain.Attachment{}
+	thumbs := map[int64]image.Image{}
+	for i := int64(1); i <= 7; i++ {
+		attachments = append(attachments, domain.Attachment{ID: i, Filename: "image.png", MIMEType: "image/png"})
+		thumbs[i] = image.NewRGBA(image.Rect(0, 0, int(60*i), 200))
+	}
+	g := NewImageGallery(attachments, thumbs, nil, func([]int64) {})
+	for _, width := range []float32{1400, 320, 900, 460, 1600, 300} {
+		g.Resize(fyne.NewSize(width, 2000))
+		for _, tile := range g.tiles {
+			test.WidgetRenderer(tile.object.(fyne.Widget)).Layout(tile.Size())
+			p, s := tile.Position(), tile.Size()
+			if p.X < 0 || p.X+s.Width > width+0.01 || p.Y+s.Height > g.MinSize().Height+0.01 {
+				t.Fatalf("width %v: tile out of gallery bounds: %v %v, min=%v", width, p, s, g.MinSize())
+			}
+			p, s = tile.preview.Position(), tile.preview.Size()
+			if p.X < 0 || p.X+s.Width > tile.Size().Width || p.Y+s.Height > tile.Size().Height-galleryFooterHeight {
+				t.Fatalf("width %v: preview escapes tile: %v %v / %v", width, p, s, tile.Size())
+			}
+		}
+	}
+}
+
+func TestGalleryDragStartsOnSourceAndFollowsPointerWithoutSaving(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	calls := 0
+	g := NewImageGallery(galleryAttachments(), nil, nil, func([]int64) { calls++ })
+	g.Resize(fyne.NewSize(800, 1000))
+	first := g.tiles[0]
+	first.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary})
+	drag := first.object.(fyne.Draggable)
+	drag.Dragged(&fyne.DragEvent{PointEvent: fyne.PointEvent{Position: fyne.NewPos(30, 30)}})
+	if !first.dragging || !g.ghost.Visible() || first.preview.Translucency == 0 {
+		t.Fatal("drag should be visible before crossing into another image")
+	}
+	initialGhost := g.ghost.Position()
+	drag.Dragged(&fyne.DragEvent{PointEvent: fyne.PointEvent{Position: fyne.NewPos(160, 160)}})
+	if g.ghost.Position() == initialGhost {
+		t.Fatal("floating image did not follow the pointer")
+	}
+	if calls != 0 {
+		t.Fatal("pointer movement persisted ordering before release")
+	}
+	drag.DragEnd()
+	if first.dragging || g.ghost.Visible() || g.marker.Visible() || first.preview.Translucency != 0 || calls != 0 {
+		t.Fatal("same-image drop should reset drag feedback without saving")
 	}
 }
 
@@ -63,7 +119,7 @@ func TestGalleryDragCommitsOnlyOnDropAndPreservesNonImageSlots(t *testing.T) {
 	var opens int
 	attachments := galleryAttachments()
 	g := NewImageGallery(attachments, nil, func(domain.Attachment) { opens++ }, func(ids []int64) { got = ids })
-	g.Resize(fyne.NewSize(360, 650))
+	g.Resize(fyne.NewSize(560, 1000))
 	first := g.tiles[0]
 	drag := first.object.(fyne.Draggable)
 	first.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary})
@@ -109,7 +165,7 @@ func TestGalleryRejectsNoOpOutsideAndSecondaryDrags(t *testing.T) {
 		t.Run(scenario.name, func(t *testing.T) {
 			calls := 0
 			g := NewImageGallery(galleryAttachments(), nil, nil, func([]int64) { calls++ })
-			g.Resize(fyne.NewSize(360, 650))
+			g.Resize(fyne.NewSize(560, 650))
 			first := g.tiles[0]
 			first.MouseDown(&desktop.MouseEvent{Button: scenario.button})
 			drag := first.object.(fyne.Draggable)
@@ -127,7 +183,7 @@ func TestGalleryDropAtLastTileBoundaryAndBackwards(t *testing.T) {
 	defer a.Quit()
 	var got []int64
 	g := NewImageGallery(galleryAttachments(), nil, nil, func(ids []int64) { got = ids })
-	g.Resize(fyne.NewSize(360, 650))
+	g.Resize(fyne.NewSize(560, 1000))
 	last := g.tiles[2]
 	last.MouseDown(&desktop.MouseEvent{Button: desktop.MouseButtonPrimary})
 	drag := last.object.(fyne.Draggable)

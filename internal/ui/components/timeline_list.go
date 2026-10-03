@@ -7,7 +7,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/NguyenHien-8/NoteHub/internal/domain"
@@ -32,7 +31,7 @@ type timelineCard struct {
 }
 
 func NewTimelineList() *TimelineList {
-	t := &TimelineList{rows: container.New(layout.NewCustomPaddedVBoxLayout(10)), cards: make(map[int64]timelineCard), headers: make(map[string]fyne.CanvasObject)}
+	t := &TimelineList{rows: NewResponsiveVBox(10), cards: make(map[int64]timelineCard), headers: make(map[string]fyne.CanvasObject)}
 	t.Scroll = container.NewVScroll(t.rows)
 	t.more = widget.NewButtonWithIcon("Load more", theme.NavigateNextIcon(), t.requestMore)
 	t.more.Hide()

@@ -8,7 +8,8 @@ on your computer in SQLite and the application data directory.
 ## Start the desktop app
 
 For a built package, open `NoteHub.exe` on Windows, `NoteHub.app` on macOS, or
-run `./NoteHub` on Linux. The app opens its own desktop window. The logo is
+run `./NoteHub` on Linux. On Windows the app opens maximized, using the monitor's
+work area while keeping the title bar and taskbar available. The logo is
 embedded, so launching from another working directory works.
 
 To build from source, install Go and the native C/OpenGL development tools for
@@ -48,6 +49,11 @@ awaiting CI verification.
 - **Note menu:** edit, favorite, share, or delete a note. Delete asks for
   confirmation. Edits use revisions; a conflict requires reloading instead of
   silently overwriting another change.
+- **Edit note:** use the formatting toolbar for bold, italic, underline,
+  strikethrough, font size, text color, highlight, lists and indentation. The
+  Markdown source and preview tabs let you edit and check the result. Import
+  and export UTF-8 `.md` files from the editor; importing changes the draft,
+  and **Save** commits it to the note. Undo/redo also covers toolbar edits.
 - **Calendar:** select a day to view its notes. Clear the date filter to return
   to all notes. The small calendar and quick filters provide the same navigation
   from Home.
@@ -77,18 +83,29 @@ attachments. Existing databases are upgraded through additive migrations.
 
 The desktop shell uses three rounded panels: a softly tinted left navigation
 panel, a neutral workspace, and a softly tinted right information panel. The
-left and right panels can be resized or collapsed. Resize handles keep a wide
+left and right panels can be resized or collapsed. The collapsed left panel
+keeps Home, Calendar, Search, Attachments, Tags, Settings and My Tags accessible
+as icons, with labels on hover/focus. Resize handles keep a wide
 hit target but are visually transparent, so panel spacing replaces permanent
-divider lines. On narrow windows one side panel can be suppressed temporarily
-without changing the saved user preference.
+divider lines. Narrow windows keep a compact navigation rail and temporarily
+hide the right panel when necessary without changing saved preferences.
 
 Image gallery tiles preserve the source aspect ratio with `ImageFillContain`.
-The two-column gallery expands on normal windows but caps its visual grid at
-960 px and centers it when the workspace becomes very wide, avoiding the huge
-empty image cards that appeared after both sidebars were collapsed. Home/Edit
+Gallery rows use the entire note width, choose their column count from the
+available space and allocate tile widths according to image aspect ratios.
+Narrow windows use a single column. Row heights are bounded, images are never
+cropped, and the note height is remeasured when the window or rails change.
+Dragging displays a floating preview, dims the original, and marks the drop
+position; ordering is saved only on release over another image. Home/Edit
 previews are generated off the UI thread at up to 640 × 420 pixels, then cached
 with a bounded LRU-style usage map. The larger preview budget avoids blurry
 upscaling while keeping decoded image memory bounded.
+
+Notes keep Markdown source in the existing content field. Formatting that
+Markdown cannot represent (underline, size, color and highlight) uses inline
+HTML styles; external Markdown viewers may display those styles differently.
+Previews render local text without loading external Markdown images. Attached
+images remain in the gallery and are not embedded in an exported `.md` file.
 
 Typography is theme-wide instead of being applied per widget. NoteHub can use
 Fyne's System/Monospace faces or common fonts already installed by the OS. Font

@@ -50,6 +50,7 @@ type Desktop struct {
 	expiryTicker           *time.Ticker
 	stopTick               chan struct{}
 	shutdownOnce           sync.Once
+	startupOnce            sync.Once
 }
 
 func NewWindow(application fyne.App, b *app.Backend, version string) *Desktop {
@@ -145,6 +146,18 @@ func newWindow(application fyne.App, b *app.Backend, version string, jobs *work.
 	d.Navigate("home")
 	d.refreshMetadata()
 	return d
+}
+
+// Show maximizes only the first launch, after Fyne creates the native handle.
+// Reopening a hidden window preserves the user's later restored/maximized state.
+func (d *Desktop) Show() {
+	d.Window.Show()
+	d.startupOnce.Do(func() { platform.MaximizeWindow(d.Window) })
+}
+
+func (d *Desktop) ShowAndRun() {
+	d.Show()
+	d.application.Run()
 }
 
 // Wait finishes outstanding storage work before the caller closes the backend.

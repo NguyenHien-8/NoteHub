@@ -63,7 +63,7 @@ func TestRailsCollapseAndNarrowLayoutRememberUserWidths(t *testing.T) {
 		t.Fatal("automatic suppression changed manual collapse choice")
 	}
 	rails.ToggleRight()
-	if !right.Visible() || left.Visible() || main.Size().Width < 400 {
+	if !right.Visible() || !left.Visible() || left.Size().Width != 64 || main.Size().Width < 400 {
 		t.Fatal("right toggle must expose the automatically hidden panel at narrow sizes")
 	}
 	rails.Resize(fyne.NewSize(1300, 600))
@@ -72,8 +72,8 @@ func TestRailsCollapseAndNarrowLayoutRememberUserWidths(t *testing.T) {
 	}
 	rails.ToggleLeft()
 	rails.ToggleRight()
-	if left.Visible() || right.Visible() || main.Size().Width != 1300 {
-		t.Fatal("collapsed rails did not release their entire width")
+	if !left.Visible() || left.Size().Width != 64 || right.Visible() || main.Size().Width != 1226 {
+		t.Fatal("collapsed sidebar must retain compact navigation and release the remaining width")
 	}
 	reopened := NewRails(canvas.NewRectangle(nil), canvas.NewRectangle(nil), canvas.NewRectangle(nil), prefs)
 	if !reopened.LeftCollapsed() || !reopened.RightCollapsed() {
@@ -82,6 +82,22 @@ func TestRailsCollapseAndNarrowLayoutRememberUserWidths(t *testing.T) {
 	rails.ToggleLeft()
 	if left.Size().Width != 330 {
 		t.Fatal("expansion lost saved width")
+	}
+}
+
+func TestRailsKeepNavigationAtSmallestWidthAndIgnoreCompactDrag(t *testing.T) {
+	rails, left, main, _, prefs := newTestRails(t)
+	rails.Resize(fyne.NewSize(640, 240))
+	if !left.Visible() || left.Size().Width != 64 || main.Size().Width < 400 {
+		t.Fatalf("small window lost navigation: left=%v %v main=%v", left.Visible(), left.Size(), main.Size())
+	}
+	if rails.LeftCollapsed() || prefs.Bool("layout.left.collapsed") {
+		t.Fatal("automatic compact mode persisted as manual collapse")
+	}
+	test.WidgetRenderer(rails).Objects()[1].(fyne.Draggable).Dragged(&fyne.DragEvent{Dragged: fyne.NewDelta(40, 0)})
+	rails.Resize(fyne.NewSize(1300, 600))
+	if left.Size().Width != 250 {
+		t.Fatalf("compact drag changed saved expanded width: %v", left.Size())
 	}
 }
 
