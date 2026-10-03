@@ -114,31 +114,74 @@ try {
     }
 
     # Run windeployqt explicitly as a second safety net. This is what copies
-    # Qt6Core/Gui/Widgets/Concurrent, qwindows.dll and MinGW runtime DLLs.
+    # the Qt/runtime DLLs actually required by NoteHub, qwindows.dll and MinGW runtime DLLs.
     Invoke-Native $windeployqt --release --compiler-runtime --no-translations $stageExe
 
     Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $stagePath -Force
 
     Write-Host '[5/5] Verifying deployable folder...'
+
+    # Verify only files that are unconditionally required by the packaged app.
+    # Optional Qt modules must not be hard-coded: windeployqt copies the DLLs
+    # actually required by the final executable/runtime dependency graph.
     $required = @(
         'NoteHub.exe',
         'notehub-core.exe',
         'Qt6Core.dll',
         'Qt6Gui.dll',
         'Qt6Widgets.dll',
-        'Qt6Concurrent.dll',
         'platforms\qwindows.dll',
         'libgcc_s_seh-1.dll',
         'libstdc++-6.dll',
         'libwinpthread-1.dll'
     )
 
-    $missing = @()
+    $missing = New-Object System.Collections.Generic.List[string]
     foreach ($relative in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $stagePath $relative))) {
-            $missing += $relative
+            $missing.Add($relative)
         }
     }
+
+    # Inspect the actual PE imports when MinGW objdump is available. This makes
+    # validation follow NoteHub.exe instead of guessing that a DLL is required.
+    $objdump = Join-Path (Split-Path $Compiler -Parent) 'objdump.exe'
+    if (Test-Path -LiteralPath $objdump) {
+        $dumpOutput = & $objdump -p $stageExe 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $directDependencies = @(
+                $dumpOutput |
+                    ForEach-Object {
+                        if ($_ -match 'DLL Name:\s*(.+?\.dll)\s*$') {
+                            $Matches[1].Trim()
+                        }
+                    } |
+                    Where-Object {
+                        $_ -match '^Qt6.*\.dll$' -or
+                        $_ -match '^lib(gcc|stdc\+\+|winpthread).*\.dll$'
+                    } |
+                    Sort-Object -Unique
+            )
+
+            foreach ($dll in $directDependencies) {
+                if (-not (Test-Path -LiteralPath (Join-Path $stagePath $dll))) {
+                    $missing.Add($dll)
+                }
+            }
+
+            if ($directDependencies.Count -gt 0) {
+                Write-Host ('Direct deploy dependencies: ' + ($directDependencies -join ', '))
+            }
+        }
+        else {
+            Write-Warning 'objdump dependency inspection failed; continuing with baseline package checks.'
+        }
+    }
+    else {
+        Write-Warning 'objdump.exe was not found; continuing with baseline package checks.'
+    }
+
+    $missing = @($missing | Sort-Object -Unique)
     if ($missing.Count -gt 0) {
         throw "Deployment is incomplete. Missing: $($missing -join ', ')"
     }

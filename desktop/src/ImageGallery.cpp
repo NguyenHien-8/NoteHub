@@ -6,7 +6,7 @@
 #include <cmath>
 
 namespace {
-constexpr int gap = 10, footer = 30;
+constexpr int gap = 10, footer = 32;
 const char *mime = "application/x-notehub-attachment";
 QCache<QString, QImage> cache(64 * 1024);
 } // namespace
@@ -55,28 +55,18 @@ QVector<QRect> ImageGallery::frames(int width) const {
     if (tiles.isEmpty())
         return result;
     width = qMax(1, width);
-    const int columns = qMin(int(tiles.size()), qMax(1, (width + gap) / 240));
-    int y = 0;
-    for (int first = 0; first < tiles.size(); first += columns) {
-        const int end = qMin(int(tiles.size()), first + columns);
-        qreal total = 0;
-        QVector<qreal> ratios;
-        for (int i = first; i < end; ++i) {
-            const auto &image = tiles[i].image;
-            qreal ratio = image.isNull() ? 1.4 : qreal(image.width()) / image.height();
-            ratio = qBound(.65, ratio, 2.2);
-            ratios.append(ratio);
-            total += ratio;
-        }
-        const int available = width - (end - first - 1) * gap;
-        const int height = qMin(300, int(available / total)) + footer + 12;
-        int x = 0;
-        for (int i = first; i < end; ++i) {
-            int w = i == end - 1 ? width - x : int(available * ratios[i - first] / total);
-            result.append({x, y, w, height});
-            x += w + gap;
-        }
-        y += height + gap;
+    // Keep a predictable card grid. The last row never stretches one or two
+    // images across the whole note, which avoids oversized previews.
+    const int columns = qBound(1, (width + gap) / 220, 4);
+    const int tileWidth = qMax(1, (width - (columns - 1) * gap) / columns);
+    const int imageHeight = qBound(130, int(tileWidth * 0.68), 205);
+    const int tileHeight = imageHeight + footer + 14;
+    for (int i = 0; i < tiles.size(); ++i) {
+        const int row = i / columns;
+        const int column = i % columns;
+        const int x = column * (tileWidth + gap);
+        const int y = row * (tileHeight + gap);
+        result.append({x, y, tileWidth, tileHeight});
     }
     return result;
 }
@@ -93,35 +83,40 @@ void ImageGallery::paintEvent(QPaintEvent *) {
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
     const auto boxes = frames(width());
+    const QColor border = palette().color(QPalette::Mid);
+    const QColor surface = palette().color(QPalette::Base);
+    const QColor imageSurface = palette().color(QPalette::AlternateBase);
     for (int i = 0; i < tiles.size(); ++i) {
         const auto r = boxes[i].adjusted(1, 1, -1, -1);
-        p.setPen(QPen(i == target ? QColor("#087bff") : palette().color(QPalette::Mid), i == target ? 2 : 1));
-        p.setBrush(palette().base());
-        p.drawRoundedRect(r, 9, 9);
+        p.setPen(QPen(i == target ? QColor("#087bff") : border, i == target ? 2 : 1));
+        p.setBrush(surface);
+        p.drawRoundedRect(r, 10, 10);
         p.save();
-        p.setClipRect(r);
         if (i == dragging)
-            p.setOpacity(.32);
-        auto area = r.adjusted(7, 7, -7, -footer);
+            p.setOpacity(.30);
+        const QRect area = r.adjusted(7, 7, -7, -footer - 6);
+        p.setPen(Qt::NoPen);
+        p.setBrush(imageSurface);
+        p.drawRoundedRect(area, 7, 7);
         const auto &img = tiles[i].image;
         if (!img.isNull()) {
-            auto size = img.size().scaled(area.size(), Qt::KeepAspectRatio);
+            const auto size = img.size().scaled(area.size() - QSize(8, 8), Qt::KeepAspectRatio);
             QRect dest(QPoint(), size);
             dest.moveCenter(area.center());
+            p.setClipRect(area.adjusted(1, 1, -1, -1));
             p.drawImage(dest, img);
         } else {
             p.setPen(palette().color(QPalette::PlaceholderText));
             p.drawText(area, Qt::AlignCenter, tr("Image preview"));
         }
-        p.setOpacity(1);
-        p.setPen(palette().color(QPalette::Text));
-        p.drawText(QRect(r.left() + 10, r.bottom() - footer + 3, r.width() - 20, footer - 5),
-                   Qt::AlignVCenter,
-                   fontMetrics().elidedText(tiles[i].name, Qt::ElideMiddle, r.width() - 20));
         p.restore();
+        p.setPen(palette().color(QPalette::Text));
+        const QRect footerRect(r.left() + 10, r.bottom() - footer + 2, r.width() - 20, footer - 4);
+        p.drawText(footerRect, Qt::AlignVCenter,
+                   fontMetrics().elidedText(tiles[i].name, Qt::ElideMiddle, footerRect.width()));
         if (i == target) {
             const int x = target > dragging ? r.right() - 2 : r.left();
-            p.fillRect(QRect(x, r.top() + 5, 3, r.height() - 10), QColor("#087bff"));
+            p.fillRect(QRect(x, r.top() + 7, 3, r.height() - 14), QColor("#087bff"));
         }
     }
 }

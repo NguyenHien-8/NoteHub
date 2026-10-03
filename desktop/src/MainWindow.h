@@ -28,13 +28,13 @@ class MainWindow final : public QMainWindow {
   private:
     BackendClient backend;
     QSettings settings;
-    QWidget *navigation, *rightPanel, *composerPanel, *rows;
+    QWidget *navigation, *rightPanel, *composerPanel, *rows, *workspace;
     QScrollArea *scroll, *navigationScroll;
     QVBoxLayout *rowLayout;
     QLineEdit *search;
     QTextEdit *composer;
-    QLabel *heading, *stagedLabel;
-    QPushButton *save, *more, *leftToggle;
+    QLabel *heading, *stagedLabel, *allCount, *favoriteCount, *sharedCount;
+    QPushButton *save, *more, *leftToggle, *clearStage;
     QCalendarWidget *calendar;
     QList<QToolButton *> navButtons;
     QString page = "home", date, tag, cursor, dataPath;
@@ -58,5 +58,6 @@ class MainWindow final : public QMainWindow {
              std::function<void(const QJsonValue &)> done = {});
     void applyNavigation();
     void applyAppearance();
+    void updateStagedSummary();
     void showError(const QString &message);
 };

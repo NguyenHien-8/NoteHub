@@ -14,24 +14,33 @@ void loadNoteDocument(QTextDocument *document, const QString &content) {
 NoteEditor::NoteEditor(QWidget *parent) : QWidget(parent) {
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
     toolbar = new QToolBar(this);
+    toolbar->setObjectName("editorToolbar");
+    toolbar->setMovable(false);
+    toolbar->setFloatable(false);
     toolbar->setIconSize({18, 18});
     layout->addWidget(toolbar);
     rich = new QTextEdit(this);
+    rich->setObjectName("editorSurface");
     rich->setDocument(new LocalTextDocument(rich));
     rich->setAcceptRichText(true);
     rich->setPlaceholderText(tr("Write your note…"));
     rich->setMinimumHeight(140);
     source = new QPlainTextEdit(this);
+    source->setObjectName("editorSource");
     source->setPlaceholderText(tr("# Markdown source"));
     source->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     tabs = new QTabWidget(this);
+    tabs->setObjectName("editorTabs");
+    tabs->setDocumentMode(true);
     tabs->addTab(rich, tr("Write"));
     tabs->addTab(source, tr("Markdown source"));
     layout->addWidget(tabs, 1);
     auto markdownHint = new QLabel(tr("Editing Markdown source converts this note to Markdown. "
                                       "Colors, highlights, underline and font sizes may be lost."), this);
     markdownHint->setWordWrap(true);
+    markdownHint->setObjectName("muted");
     markdownHint->setVisible(false);
     layout->addWidget(markdownHint);
     connect(tabs, &QTabWidget::currentChanged, markdownHint,
@@ -124,6 +133,8 @@ NoteEditor::NoteEditor(QWidget *parent) : QWidget(parent) {
     auto files = new QHBoxLayout;
     auto import = new QPushButton(tr("Import .md"), this),
          exportFile = new QPushButton(tr("Export .md"), this);
+    import->setObjectName("outlineButton");
+    exportFile->setObjectName("outlineButton");
     files->addWidget(import);
     files->addWidget(exportFile);
     files->addStretch();

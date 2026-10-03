@@ -49,6 +49,9 @@ class UiTests final : public QObject {
                 QVERIFY(r.bottom() < gallery.heightForWidth(width));
             }
         }
+        const auto wide = gallery.frames(1400);
+        QCOMPARE(wide[4].width(), wide[0].width());
+        QVERIFY(wide[4].width() < 400); // the incomplete last row must not become giant previews
     }
     void ipcHandlesFragmentedRepliesAndEOF() {
         BackendClient backend;

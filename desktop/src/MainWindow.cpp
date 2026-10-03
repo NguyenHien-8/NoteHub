@@ -2,21 +2,141 @@
 #include "ImageGallery.h"
 #include "NoteEditor.h"
 #include <QTextList>
+#include <QAbstractTextDocumentLayout>
 #include <QtWidgets>
+#include <cmath>
 #include <memory>
 
 namespace {
+enum class Glyph { Sidebar, Home, Calendar, Search, Attachment, Tags, Settings, Folder, Star, Share, More,
+                   Edit, Trash, Plus, Note };
+
+QPixmap iconPixmap(Glyph glyph, const QColor &color, int size = 22, bool filled = false) {
+    constexpr qreal dpr = 2.0;
+    QPixmap pixmap(QSize(size, size) * dpr);
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter p(&pixmap);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.scale(size / 24.0, size / 24.0);
+    QPen pen(color, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    p.setPen(pen);
+    p.setBrush(Qt::NoBrush);
+    switch (glyph) {
+    case Glyph::Sidebar:
+        p.drawRoundedRect(QRectF(3, 4, 18, 16), 2, 2);
+        p.drawLine(QPointF(9, 4), QPointF(9, 20));
+        break;
+    case Glyph::Home:
+        p.drawPolyline(QPolygonF{QPointF(3.5, 11), QPointF(12, 4), QPointF(20.5, 11)});
+        p.drawRoundedRect(QRectF(6, 10, 12, 10), 1.5, 1.5);
+        p.drawLine(QPointF(10, 20), QPointF(10, 14));
+        p.drawLine(QPointF(14, 14), QPointF(14, 20));
+        break;
+    case Glyph::Calendar:
+        p.drawRoundedRect(QRectF(4, 5.5, 16, 14.5), 2, 2);
+        p.drawLine(QPointF(4, 9), QPointF(20, 9));
+        p.drawLine(QPointF(8, 3.8), QPointF(8, 7));
+        p.drawLine(QPointF(16, 3.8), QPointF(16, 7));
+        p.drawPoint(QPointF(8, 13)); p.drawPoint(QPointF(12, 13)); p.drawPoint(QPointF(16, 13));
+        p.drawPoint(QPointF(8, 17)); p.drawPoint(QPointF(12, 17));
+        break;
+    case Glyph::Search:
+        p.drawEllipse(QRectF(4, 4, 11, 11));
+        p.drawLine(QPointF(14, 14), QPointF(20, 20));
+        break;
+    case Glyph::Attachment:
+        p.drawPath([] { QPainterPath path; path.moveTo(8, 12); path.lineTo(14.5, 5.5); path.cubicTo(18, 2, 23, 7, 19.5, 10.5); path.lineTo(11, 19); path.cubicTo(7.5, 22.5, 2.5, 17.5, 6, 14); path.lineTo(14, 6); return path; }());
+        break;
+    case Glyph::Tags:
+        p.drawPath([] { QPainterPath path; path.moveTo(4, 5); path.lineTo(13, 5); path.lineTo(20, 12); path.lineTo(12, 20); path.lineTo(4, 12); path.closeSubpath(); return path; }());
+        p.drawEllipse(QRectF(7, 8, 2, 2));
+        break;
+    case Glyph::Settings:
+        p.drawEllipse(QRectF(8, 8, 8, 8));
+        for (int i = 0; i < 8; ++i) {
+            const qreal a = i * 3.14159265358979323846 / 4.0;
+            const QPointF c(12, 12), a1(c.x() + std::cos(a) * 7, c.y() + std::sin(a) * 7),
+                a2(c.x() + std::cos(a) * 9, c.y() + std::sin(a) * 9);
+            p.drawLine(a1, a2);
+        }
+        break;
+    case Glyph::Folder:
+        p.drawPath([] { QPainterPath path; path.moveTo(3.5, 7); path.lineTo(9, 7); path.lineTo(11, 9); path.lineTo(20.5, 9); path.lineTo(20.5, 19); path.lineTo(3.5, 19); path.closeSubpath(); return path; }());
+        p.drawLine(QPointF(3.5, 11), QPointF(20.5, 11));
+        break;
+    case Glyph::Star: {
+        QPolygonF points;
+        for (int i = 0; i < 10; ++i) {
+            const qreal a = -3.14159265358979323846 / 2 + i * 3.14159265358979323846 / 5;
+            const qreal r = i % 2 ? 4.0 : 9.0;
+            points << QPointF(12 + std::cos(a) * r, 12 + std::sin(a) * r);
+        }
+        if (filled)
+            p.setBrush(color);
+        p.drawPolygon(points);
+        break;
+    }
+    case Glyph::Share:
+        p.drawEllipse(QRectF(4, 10, 4, 4)); p.drawEllipse(QRectF(16, 5, 4, 4)); p.drawEllipse(QRectF(16, 15, 4, 4));
+        p.drawLine(QPointF(8, 11), QPointF(16, 8)); p.drawLine(QPointF(8, 13), QPointF(16, 16));
+        break;
+    case Glyph::More:
+        p.setBrush(color); p.setPen(Qt::NoPen);
+        p.drawEllipse(QRectF(5, 11, 2, 2)); p.drawEllipse(QRectF(11, 11, 2, 2)); p.drawEllipse(QRectF(17, 11, 2, 2));
+        break;
+    case Glyph::Edit:
+        p.drawLine(QPointF(5, 19), QPointF(8, 16)); p.drawLine(QPointF(8, 16), QPointF(17, 7));
+        p.drawLine(QPointF(17, 7), QPointF(20, 10)); p.drawLine(QPointF(20, 10), QPointF(11, 19));
+        p.drawLine(QPointF(5, 19), QPointF(11, 19));
+        break;
+    case Glyph::Trash:
+        p.drawRoundedRect(QRectF(6, 8, 12, 12), 1.5, 1.5); p.drawLine(QPointF(4.5, 7), QPointF(19.5, 7));
+        p.drawLine(QPointF(9, 4.5), QPointF(15, 4.5)); p.drawLine(QPointF(10, 11), QPointF(10, 17)); p.drawLine(QPointF(14, 11), QPointF(14, 17));
+        break;
+    case Glyph::Plus:
+        p.drawLine(QPointF(12, 5), QPointF(12, 19)); p.drawLine(QPointF(5, 12), QPointF(19, 12));
+        break;
+    case Glyph::Note:
+        p.drawRoundedRect(QRectF(5, 4, 14, 16), 2, 2); p.drawLine(QPointF(8, 9), QPointF(16, 9));
+        p.drawLine(QPointF(8, 13), QPointF(16, 13)); p.drawLine(QPointF(8, 17), QPointF(13, 17));
+        break;
+    }
+    return pixmap;
+}
+
+QIcon lineIcon(Glyph glyph) {
+    QIcon result;
+    result.addPixmap(iconPixmap(glyph, QColor("#66758a")), QIcon::Normal, QIcon::Off);
+    result.addPixmap(iconPixmap(glyph, QColor("#087bff"), 22, glyph == Glyph::Star), QIcon::Normal, QIcon::On);
+    result.addPixmap(iconPixmap(glyph, QColor("#9ba8b8")), QIcon::Disabled, QIcon::Off);
+    return result;
+}
+
 QPushButton *button(const QString &text, QWidget *parent = nullptr) {
     auto b = new QPushButton(text, parent);
     b->setCursor(Qt::PointingHandCursor);
     return b;
 }
-QFrame *card() {
+
+QToolButton *iconButton(Glyph glyph, const QString &tip, QWidget *parent = nullptr) {
+    auto b = new QToolButton(parent);
+    b->setIcon(lineIcon(glyph));
+    b->setIconSize({20, 20});
+    b->setToolTip(tip);
+    b->setCursor(Qt::PointingHandCursor);
+    b->setAutoRaise(true);
+    b->setObjectName("iconButton");
+    return b;
+}
+
+QFrame *card(const char *name = "card") {
     auto f = new QFrame;
-    f->setObjectName("card");
+    f->setObjectName(name);
     f->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     return f;
 }
+
 QJsonArray jsonPaths(const QStringList &paths) {
     QJsonArray a;
     for (const auto &p : paths)
@@ -51,144 +171,201 @@ class MemoDialog final : public QDialog {
 MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *parent)
     : QMainWindow(parent), backend(this) {
     setWindowTitle("NoteHub");
-    resize(1280, 820);
-    setMinimumSize(720, 480);
+    resize(1360, 840);
+    setMinimumSize(760, 520);
+    statusBar()->setSizeGripEnabled(false);
+    statusBar()->hide();
+
     auto root = new QWidget(this);
+    root->setObjectName("appRoot");
     setCentralWidget(root);
     auto outer = new QVBoxLayout(root);
-    outer->setContentsMargins(16, 12, 16, 12);
-    outer->setSpacing(14);
+    outer->setContentsMargins(18, 14, 18, 14);
+    outer->setSpacing(12);
+
     auto header = new QHBoxLayout;
-    leftToggle = button("◧");
-    leftToggle->setFixedWidth(38);
+    header->setSpacing(10);
+    leftToggle = button({});
+    leftToggle->setIcon(lineIcon(Glyph::Sidebar));
+    leftToggle->setIconSize({21, 21});
+    leftToggle->setFixedSize(38, 38);
+    leftToggle->setObjectName("headerIconButton");
     leftToggle->setToolTip(tr("Collapse navigation"));
     header->addWidget(leftToggle);
+
+    auto logo = new QLabel;
+    logo->setFixedSize(42, 42);
+    logo->setPixmap(QPixmap(":/icons/NoteHub.png").scaled(38, 38, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    logo->setAlignment(Qt::AlignCenter);
+    header->addWidget(logo);
     auto brand = new QLabel("NoteHub");
     brand->setObjectName("brand");
     header->addWidget(brand);
-    header->addStretch();
+    header->addStretch(1);
+
     search = new QLineEdit;
-    search->setPlaceholderText(tr("Search notes, tags and content…  Ctrl+K"));
+    search->setObjectName("globalSearch");
+    search->setPlaceholderText(tr("Search notes, tags and content…"));
     search->setClearButtonEnabled(true);
-    search->setMaximumWidth(520);
-    search->setMinimumWidth(180);
+    search->setMaximumWidth(480);
+    search->setMinimumWidth(220);
+    search->setFixedHeight(42);
+    search->addAction(lineIcon(Glyph::Search), QLineEdit::LeadingPosition);
+    search->setToolTip(tr("Search · Ctrl+K"));
     header->addWidget(search, 1);
     outer->addLayout(header);
+
     auto columns = new QHBoxLayout;
-    columns->setSpacing(14);
+    columns->setSpacing(12);
     outer->addLayout(columns, 1);
+
     navigation = new QFrame;
-    navigation->setObjectName("navigation");
+    navigation->setObjectName("sideRail");
     auto nav = new QVBoxLayout(navigation);
-    nav->setSpacing(8);
-    nav->setContentsMargins(8, 12, 8, 12);
-    const QList<QPair<QString, QStyle::StandardPixmap>> entries = {
-        {"Home", QStyle::SP_DirHomeIcon},
-        {"Calendar", QStyle::SP_FileDialogDetailedView},
-        {"Search", QStyle::SP_FileDialogContentsView},
-        {"Attachments", QStyle::SP_FileIcon},
-        {"Tags", QStyle::SP_DirIcon},
-        {"Settings", QStyle::SP_FileDialogInfoView}};
+    nav->setSpacing(5);
+    nav->setContentsMargins(7, 9, 7, 9);
+    struct NavEntry { QString label; Glyph glyph; QString destination; };
+    const QList<NavEntry> entries = {{"Home", Glyph::Home, "home"},
+                                     {"Calendar", Glyph::Calendar, "calendar"},
+                                     {"Search", Glyph::Search, "search"},
+                                     {"Attachments", Glyph::Attachment, "attachments"},
+                                     {"Tags", Glyph::Tags, "tags"},
+                                     {"Settings", Glyph::Settings, "settings"}};
     for (const auto &entry : entries) {
         auto b = new QToolButton;
-        b->setText(entry.first);
-        b->setProperty("label", entry.first);
-        b->setToolTip(entry.first);
-        b->setIcon(style()->standardIcon(entry.second));
-        b->setIconSize({22, 22});
+        b->setObjectName("navButton");
+        b->setText(entry.label);
+        b->setProperty("label", entry.destination);
+        b->setToolTip(entry.label);
+        b->setIcon(lineIcon(entry.glyph));
+        b->setIconSize({21, 21});
         b->setCheckable(true);
-        b->setMinimumHeight(42);
+        b->setAutoExclusive(true);
+        b->setMinimumHeight(44);
         b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        b->setCursor(Qt::PointingHandCursor);
         nav->addWidget(b);
         navButtons.append(b);
-        connect(b, &QToolButton::clicked, this, [this, name = entry.first.toLower()] { navigate(name); });
+        connect(b, &QToolButton::clicked, this, [this, destination = entry.destination] { navigate(destination); });
     }
     auto separator = new QFrame;
+    separator->setObjectName("railSeparator");
     separator->setFrameShape(QFrame::HLine);
     nav->addWidget(separator);
     auto myTags = new QToolButton;
-    myTags->setProperty("label", "My Tags");
-    myTags->setText("My Tags");
-    myTags->setToolTip("My Tags");
-    myTags->setIcon(style()->standardIcon(QStyle::SP_DirLinkIcon));
-    myTags->setMinimumHeight(42);
+    myTags->setObjectName("navButton");
+    myTags->setProperty("label", "my tags");
+    myTags->setText(tr("My Tags"));
+    myTags->setToolTip(tr("My Tags"));
+    myTags->setIcon(lineIcon(Glyph::Folder));
+    myTags->setIconSize({21, 21});
+    myTags->setMinimumHeight(44);
     myTags->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    myTags->setCursor(Qt::PointingHandCursor);
     nav->addWidget(myTags);
     navButtons.append(myTags);
     nav->addStretch();
     connect(myTags, &QToolButton::clicked, this, [this, myTags] {
         QMenu menu;
+        menu.setObjectName("tagMenu");
         for (const auto &v : tags) {
             auto t = v.toObject();
-            auto a =
-                menu.addAction("#" + t["tag"].toString() + "  (" + QString::number(t["count"].toInt()) + ")");
+            auto a = menu.addAction("#" + t["tag"].toString() + "    " + QString::number(t["count"].toInt()));
             connect(a, &QAction::triggered, this, [this, t] {
                 tag = t["tag"].toString();
                 page = "home";
                 refresh();
             });
         }
-        menu.addSeparator();
+        if (!tags.isEmpty())
+            menu.addSeparator();
         auto add = menu.addAction(tr("Add tag to draft…"));
         connect(add, &QAction::triggered, this, [this] {
-            bool ok;
+            bool ok = false;
             auto value = QInputDialog::getText(this, tr("Add tag"), tr("Tag (for example Research/FPGA)"),
                                                QLineEdit::Normal, {}, &ok);
             if (ok && !value.trimmed().isEmpty()) {
                 navigate("home");
                 composer->insertPlainText(" #" + value.trimmed().remove('#'));
+                composer->setFocus();
             }
         });
         menu.exec(myTags->mapToGlobal(QPoint(myTags->width(), 0)));
     });
-    auto navScroll = new QScrollArea;
-    navigationScroll = navScroll;
-    navScroll->setWidgetResizable(true);
-    navScroll->setFrameShape(QFrame::NoFrame);
-    navScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    navScroll->setWidget(navigation);
-    navScroll->setObjectName("navScroll");
-    columns->addWidget(navScroll);
-    auto center = new QWidget;
-    auto centerLayout = new QVBoxLayout(center);
-    centerLayout->setContentsMargins(0, 0, 0, 0);
-    centerLayout->setSpacing(12);
-    columns->addWidget(center, 1);
-    composerPanel = card();
+
+    navigationScroll = new QScrollArea;
+    navigationScroll->setWidgetResizable(true);
+    navigationScroll->setFrameShape(QFrame::NoFrame);
+    navigationScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    navigationScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    navigationScroll->setWidget(navigation);
+    navigationScroll->setObjectName("navScroll");
+    columns->addWidget(navigationScroll);
+
+    workspace = new QFrame;
+    workspace->setObjectName("workspace");
+    auto centerLayout = new QVBoxLayout(workspace);
+    centerLayout->setContentsMargins(12, 12, 12, 12);
+    centerLayout->setSpacing(10);
+    columns->addWidget(workspace, 1);
+
+    composerPanel = card("composerCard");
     auto compose = new QVBoxLayout(composerPanel);
+    compose->setContentsMargins(11, 10, 11, 9);
+    compose->setSpacing(7);
     composer = new QTextEdit;
+    composer->setObjectName("composer");
     composer->setAcceptRichText(false);
     composer->setPlaceholderText(tr("Có suy nghĩ gì…"));
-    composer->setMaximumHeight(110);
+    composer->setMinimumHeight(72);
+    composer->setMaximumHeight(105);
     compose->addWidget(composer);
     stagedLabel = new QLabel;
+    stagedLabel->setObjectName("stagedFiles");
     stagedLabel->setWordWrap(true);
     stagedLabel->hide();
     compose->addWidget(stagedLabel);
     auto actions = new QHBoxLayout;
-    auto attach = button(tr("Attach files")), clearStage = button(tr("Clear files"));
+    actions->setSpacing(4);
+    auto attach = button(tr("Attach files"));
+    attach->setObjectName("composerAction");
+    attach->setIcon(lineIcon(Glyph::Attachment));
+    auto addTag = button(tr("Add tag"));
+    addTag->setObjectName("composerAction");
+    addTag->setIcon(lineIcon(Glyph::Plus));
+    clearStage = button(tr("Clear files"));
+    clearStage->setObjectName("subtleButton");
+    clearStage->hide();
     actions->addWidget(attach);
+    actions->addWidget(addTag);
     actions->addWidget(clearStage);
     actions->addStretch();
     save = button(tr("Save"));
     save->setObjectName("primary");
+    save->setMinimumWidth(72);
     actions->addWidget(save);
     compose->addLayout(actions);
     centerLayout->addWidget(composerPanel);
+
     connect(attach, &QPushButton::clicked, this, [this] {
         const auto selected = QFileDialog::getOpenFileNames(this, tr("Attach files"));
         for (const auto &p : selected)
             if (!staged.contains(p))
                 staged.append(p);
-        QStringList names;
-        for (const auto &p : staged)
-            names.append(QFileInfo(p).fileName());
-        stagedLabel->setText(names.join(" · "));
-        stagedLabel->setVisible(!staged.isEmpty());
+        updateStagedSummary();
+    });
+    connect(addTag, &QPushButton::clicked, this, [this] {
+        bool ok = false;
+        auto value = QInputDialog::getText(this, tr("Add tag"), tr("Tag (for example Research/FPGA)"),
+                                           QLineEdit::Normal, {}, &ok);
+        if (ok && !value.trimmed().isEmpty()) {
+            composer->insertPlainText(" #" + value.trimmed().remove('#'));
+            composer->setFocus();
+        }
     });
     connect(clearStage, &QPushButton::clicked, this, [this] {
         staged.clear();
-        stagedLabel->hide();
+        updateStagedSummary();
     });
     connect(save, &QPushButton::clicked, this, [this] {
         if (composer->toPlainText().trimmed().isEmpty() && staged.isEmpty())
@@ -205,24 +382,23 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
                          }
                          composer->clear();
                          staged.clear();
-                         stagedLabel->hide();
+                         updateStagedSummary();
                          const auto uid = value.toObject()["uid"].toString();
                          if (files.isEmpty()) {
                              refresh();
                              metadata();
                          } else
-                             addFiles(uid, files, [this] {
-                                 refresh();
-                                 metadata();
-                             });
+                             addFiles(uid, files, [this] { refresh(); metadata(); });
                      });
     });
+
     auto titleRow = new QHBoxLayout;
     heading = new QLabel(tr("All Notes"));
     heading->setObjectName("heading");
     titleRow->addWidget(heading);
     titleRow->addStretch();
     auto clear = button(tr("Clear filters"));
+    clear->setObjectName("subtleButton");
     titleRow->addWidget(clear);
     centerLayout->addLayout(titleRow);
     connect(clear, &QPushButton::clicked, this, [this] {
@@ -231,51 +407,86 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
         search->clear();
         navigate("home");
     });
+
     scroll = new QScrollArea;
+    scroll->setObjectName("contentScroll");
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     rows = new QWidget;
+    rows->setObjectName("rows");
     rowLayout = new QVBoxLayout(rows);
-    rowLayout->setContentsMargins(0, 0, 4, 0);
-    rowLayout->setSpacing(12);
+    rowLayout->setContentsMargins(0, 0, 3, 0);
+    rowLayout->setSpacing(10);
     rowLayout->setAlignment(Qt::AlignTop);
     scroll->setWidget(rows);
-    rows->setAutoFillBackground(false);
-    scroll->viewport()->setAutoFillBackground(false);
     centerLayout->addWidget(scroll, 1);
     more = button(tr("Load more"));
+    more->setObjectName("outlineButton");
     more->hide();
     centerLayout->addWidget(more, 0, Qt::AlignHCenter);
     connect(more, &QPushButton::clicked, this, [this] { refresh(true); });
-    rightPanel = new QFrame;
-    rightPanel->setObjectName("navigation");
-    rightPanel->setFixedWidth(290);
+
+    rightPanel = new QWidget;
+    rightPanel->setObjectName("rightColumn");
+    rightPanel->setFixedWidth(300);
     auto side = new QVBoxLayout(rightPanel);
+    side->setContentsMargins(0, 0, 0, 0);
+    side->setSpacing(12);
+    auto calendarCard = card("sideCard");
+    auto calendarLayout = new QVBoxLayout(calendarCard);
+    calendarLayout->setContentsMargins(10, 9, 10, 10);
     calendar = new QCalendarWidget;
+    calendar->setObjectName("miniCalendar");
     calendar->setVerticalHeaderFormat(QCalendarWidget::NoVerticalHeader);
     calendar->setGridVisible(false);
     calendar->setFirstDayOfWeek(Qt::Monday);
-    side->addWidget(calendar);
+    calendarLayout->addWidget(calendar);
+    side->addWidget(calendarCard);
     connect(calendar, &QCalendarWidget::clicked, this, [this](QDate selected) {
         date = selected.toString(Qt::ISODate);
         page = "home";
         refresh();
     });
-    connect(calendar, &QCalendarWidget::currentPageChanged, this,
-            [this] { refreshCalendar(calendar); });
-    for (const auto &filter : QStringList{"All Notes", "Favorites", "Shared"}) {
-        auto b = button(filter);
-        side->addWidget(b);
-        connect(b, &QPushButton::clicked, this, [this, filter] {
-            tag.clear();
-            date.clear();
-            search->clear();
-            navigate(filter == "All Notes" ? "home" : filter.toLower());
-        });
-    }
+    connect(calendar, &QCalendarWidget::currentPageChanged, this, [this] { refreshCalendar(calendar); });
+
+    auto quickCard = card("sideCard");
+    auto quick = new QVBoxLayout(quickCard);
+    quick->setContentsMargins(12, 12, 12, 12);
+    quick->setSpacing(5);
+    auto quickTitle = new QLabel(tr("Quick Filters"));
+    quickTitle->setObjectName("sideTitle");
+    quick->addWidget(quickTitle);
+    auto addQuick = [this, quick](const QString &label, Glyph glyph, const QString &destination, QLabel *&count) {
+        auto row = new QFrame;
+        row->setObjectName("quickRow");
+        auto layout = new QHBoxLayout(row);
+        layout->setContentsMargins(6, 2, 6, 2);
+        layout->setSpacing(6);
+        auto action = new QToolButton;
+        action->setObjectName("quickButton");
+        action->setText(label);
+        action->setIcon(lineIcon(glyph));
+        action->setIconSize({18, 18});
+        action->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        action->setCursor(Qt::PointingHandCursor);
+        action->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        count = new QLabel("0");
+        count->setObjectName("countBadge");
+        count->setAlignment(Qt::AlignCenter);
+        layout->addWidget(action, 1);
+        layout->addWidget(count);
+        quick->addWidget(row);
+        connect(action, &QToolButton::clicked, this, [this, destination] { navigate(destination); });
+    };
+    addQuick(tr("All Notes"), Glyph::Note, "home", allCount);
+    addQuick(tr("Favorites"), Glyph::Star, "favorites", favoriteCount);
+    addQuick(tr("Shared"), Glyph::Share, "shared", sharedCount);
+    side->addWidget(quickCard);
     side->addStretch();
     columns->addWidget(rightPanel);
-    compact = settings.value("navigation/compact", false).toBool();
+
+    compact = settings.value("navigation/compact", true).toBool();
     connect(leftToggle, &QPushButton::clicked, this, [this] {
         compact = !compact;
         settings.setValue("navigation/compact", compact);
@@ -284,21 +495,17 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
     debounce.setSingleShot(true);
     debounce.setInterval(300);
     connect(search, &QLineEdit::textChanged, this, [this] { debounce.start(); });
-    connect(&debounce, &QTimer::timeout, this,
-            [this] { navigate(search->text().isEmpty() ? "home" : "search"); });
+    connect(&debounce, &QTimer::timeout, this, [this] { navigate(search->text().isEmpty() ? "home" : "search"); });
     auto focus = new QShortcut(QKeySequence("Ctrl+K"), this);
     connect(focus, &QShortcut::activated, search, qOverload<>(&QWidget::setFocus));
     connect(&backend, &BackendClient::connected, this, [this](const QJsonObject &hello) {
         dataPath = hello["dataDir"].toString();
         save->setEnabled(true);
-        statusBar()->showMessage(
-            tr("Ready · Qt %1 · Go core %2").arg(QT_VERSION_STR, hello["version"].toString()));
         metadata();
         refresh();
     });
     connect(&backend, &BackendClient::failed, this, [this](const QString &message) {
         save->setEnabled(false);
-        statusBar()->showMessage(tr("Backend disconnected — drafts kept"));
         showError(message);
     });
     save->setEnabled(false);
@@ -306,6 +513,22 @@ MainWindow::MainWindow(const QString &program, const QString &profile, QWidget *
     applyNavigation();
     QTimer::singleShot(0, this, [this, program, profile] { backend.start(program, profile); });
 }
+
+void MainWindow::updateStagedSummary() {
+    if (staged.isEmpty()) {
+        stagedLabel->hide();
+        clearStage->hide();
+        return;
+    }
+    QStringList names;
+    for (const auto &p : staged)
+        names.append(QFileInfo(p).fileName());
+    stagedLabel->setText(tr("%1 file(s) ready to attach").arg(staged.size()));
+    stagedLabel->setToolTip(names.join('\n'));
+    stagedLabel->show();
+    clearStage->show();
+}
+
 void MainWindow::showError(const QString &message) {
     if (activeError) {
         if (activeError->text() != message)
@@ -351,15 +574,17 @@ void MainWindow::navigate(const QString &destination) {
     refresh();
 }
 void MainWindow::applyNavigation() {
-    const bool small = compact || width() < 900;
-    navigationScroll->setFixedWidth(small ? 66 : 206);
-    leftToggle->setText(small ? "◨" : "◧");
+    const bool small = compact || width() < 980;
+    navigationScroll->setFixedWidth(small ? 68 : 212);
     leftToggle->setToolTip(small ? tr("Expand navigation") : tr("Collapse navigation"));
+    const QString active = (page == "favorites" || page == "shared") ? "home" : page;
     for (auto b : navButtons) {
         b->setToolButtonStyle(small ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
-        b->setChecked(b->property("label").toString().toLower() == page);
+        const auto key = b->property("label").toString();
+        if (b->isCheckable())
+            b->setChecked(key == active);
     }
-    rightPanel->setVisible(width() >= 1120);
+    rightPanel->setVisible(width() >= 1180);
 }
 void MainWindow::resizeEvent(QResizeEvent *e) {
     QMainWindow::resizeEvent(e);
@@ -369,10 +594,9 @@ void MainWindow::metadata() {
     rpc("metadata", {}, [this](const QJsonValue &v) {
         auto m = v.toObject();
         tags = m["tags"].toArray();
-        statusBar()->showMessage(tr("%1 notes · %2 favorites · %3 shared")
-                                     .arg(m["all"].toInt())
-                                     .arg(m["favorites"].toInt())
-                                     .arg(m["shared"].toInt()));
+        allCount->setText(QString::number(m["all"].toInt()));
+        favoriteCount->setText(QString::number(m["favorites"].toInt()));
+        sharedCount->setText(QString::number(m["shared"].toInt()));
     });
     refreshCalendar(calendar);
 }
@@ -405,9 +629,30 @@ void MainWindow::refresh(bool append) {
     loading = true;
     more->hide();
     composerPanel->setVisible(page == "home");
-    heading->setText(!tag.isEmpty()    ? "#" + tag
-                     : !date.isEmpty() ? date
-                                       : page.left(1).toUpper() + page.mid(1));
+
+    QString title;
+    if (!tag.isEmpty())
+        title = "#" + tag;
+    else if (!date.isEmpty())
+        title = QDate::fromString(date, Qt::ISODate).toString("dd MMMM yyyy");
+    else if (page == "home")
+        title = tr("All Notes");
+    else if (page == "favorites")
+        title = tr("Favorites");
+    else if (page == "shared")
+        title = tr("Shared");
+    else if (page == "attachments")
+        title = tr("Attachments");
+    else if (page == "settings")
+        title = tr("Settings");
+    else if (page == "calendar")
+        title = tr("Calendar");
+    else if (page == "tags")
+        title = tr("Tags");
+    else
+        title = tr("Search");
+    heading->setText(title);
+
     if (!append) {
         cursor.clear();
         searchOffset = 0;
@@ -421,11 +666,17 @@ void MainWindow::refresh(bool append) {
     }
     if (page == "calendar") {
         loading = false;
+        auto holder = card("contentCard");
+        auto layout = new QVBoxLayout(holder);
+        layout->setContentsMargins(14, 14, 14, 14);
         auto c = new QCalendarWidget;
-        c->setMinimumHeight(360);
+        c->setObjectName("largeCalendar");
+        c->setMinimumHeight(420);
         c->setFirstDayOfWeek(Qt::Monday);
         c->setVerticalHeaderFormat(QCalendarWidget::NoVerticalHeader);
-        rowLayout->addWidget(c);
+        c->setGridVisible(false);
+        layout->addWidget(c);
+        rowLayout->addWidget(holder);
         connect(c, &QCalendarWidget::currentPageChanged, this, [this, c] { refreshCalendar(c); });
         refreshCalendar(c);
         connect(c, &QCalendarWidget::clicked, this, [this](QDate d) {
@@ -437,19 +688,46 @@ void MainWindow::refresh(bool append) {
     }
     if (page == "tags") {
         loading = false;
-        rpc("metadata", {}, [this, current](const QJsonValue &v) {
+        auto holder = card("contentCard");
+        auto layout = new QVBoxLayout(holder);
+        layout->setContentsMargins(16, 14, 16, 16);
+        layout->setSpacing(12);
+        auto hint = new QLabel(tr("Browse your tags and jump straight to the matching notes."));
+        hint->setObjectName("muted");
+        layout->addWidget(hint);
+        auto gridHost = new QWidget;
+        auto grid = new QGridLayout(gridHost);
+        grid->setContentsMargins(0, 0, 0, 0);
+        grid->setHorizontalSpacing(8);
+        grid->setVerticalSpacing(8);
+        layout->addWidget(gridHost);
+        rowLayout->addWidget(holder);
+        rpc("metadata", {}, [this, current, grid](const QJsonValue &v) {
             if (current != generation)
                 return;
             tags = v.toObject()["tags"].toArray();
+            int index = 0;
+            const int columns = width() >= 1180 ? 3 : 2;
             for (const auto &item : tags) {
                 auto t = item.toObject();
-                auto b = button("#" + t["tag"].toString() + "  ·  " + QString::number(t["count"].toInt()));
-                rowLayout->addWidget(b);
+                auto b = button("#" + t["tag"].toString() + "     " + QString::number(t["count"].toInt()));
+                b->setObjectName("tagCard");
+                b->setMinimumHeight(48);
+                b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+                grid->addWidget(b, index / columns, index % columns);
+                ++index;
                 connect(b, &QPushButton::clicked, this, [this, t] {
                     tag = t["tag"].toString();
                     page = "home";
                     refresh();
                 });
+            }
+            if (tags.isEmpty()) {
+                auto empty = new QLabel(tr("No tags yet. Add #tags to a note to organize it."));
+                empty->setObjectName("emptyState");
+                empty->setAlignment(Qt::AlignCenter);
+                empty->setMinimumHeight(120);
+                grid->addWidget(empty, 0, 0, 1, columns);
             }
         });
         return;
@@ -469,12 +747,33 @@ void MainWindow::refresh(bool append) {
                          more->setVisible(values.size() == 40);
                          for (const auto &item : values) {
                              auto a = item.toObject();
-                             auto f = card();
+                             auto f = card("attachmentRow");
                              auto l = new QHBoxLayout(f);
+                             l->setContentsMargins(12, 10, 10, 10);
+                             l->setSpacing(10);
+                             auto icon = new QLabel;
+                             icon->setPixmap(lineIcon(Glyph::Attachment).pixmap(22, 22));
+                             icon->setFixedSize(30, 30);
+                             icon->setAlignment(Qt::AlignCenter);
+                             l->addWidget(icon);
+                             auto info = new QVBoxLayout;
+                             info->setSpacing(1);
                              auto name = button(a["filename"].toString());
+                             name->setObjectName("fileLink");
                              name->setToolTip(a["path"].toString());
-                             l->addWidget(name, 1);
-                             auto note = button(tr("Note")), remove = button(tr("Delete"));
+                             name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+                             auto path = new QLabel(QDir::toNativeSeparators(a["path"].toString()));
+                             path->setObjectName("muted");
+                             path->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+                             path->setToolTip(a["path"].toString());
+                             path->setTextInteractionFlags(Qt::TextSelectableByMouse);
+                             info->addWidget(name);
+                             info->addWidget(path);
+                             l->addLayout(info, 1);
+                             auto note = button(tr("Open note"));
+                             note->setObjectName("outlineButton");
+                             auto remove = iconButton(Glyph::Trash, tr("Delete attachment"));
+                             remove->setObjectName("dangerIconButton");
                              l->addWidget(note);
                              l->addWidget(remove);
                              rowLayout->addWidget(f);
@@ -484,12 +783,22 @@ void MainWindow::refresh(bool append) {
                              });
                              connect(note, &QPushButton::clicked, this,
                                      [this, a] { editNote(a["memoUid"].toString()); });
-                             connect(remove, &QPushButton::clicked, this, [this, a] {
+                             connect(remove, &QToolButton::clicked, this, [this, a] {
                                  if (QMessageBox::question(this, tr("Delete attachment?"),
                                                            a["filename"].toString()) == QMessageBox::Yes)
                                      rpc("attachments.delete", {{"uid", a["uid"]}},
-                                         [this](const QJsonValue &) { refresh(); });
+                                         [this](const QJsonValue &) { refresh(); metadata(); });
                              });
+                         }
+                         if (values.isEmpty() && attachmentOffset == 0) {
+                             auto empty = card("contentCard");
+                             auto layout = new QVBoxLayout(empty);
+                             auto label = new QLabel(tr("No attachments yet\nFiles you attach to notes will appear here."));
+                             label->setObjectName("emptyState");
+                             label->setAlignment(Qt::AlignCenter);
+                             label->setMinimumHeight(150);
+                             layout->addWidget(label);
+                             rowLayout->addWidget(empty);
                          }
                      });
         return;
@@ -523,43 +832,61 @@ void MainWindow::refresh(bool append) {
             for (const auto &item : items)
                 addNote(item.toObject());
             if (items.isEmpty() && !append) {
-                auto empty = new QLabel(
-                    tr("A little space for your thoughts\nWrite a note above or choose another filter."));
-                empty->setAlignment(Qt::AlignCenter);
-                empty->setMinimumHeight(160);
+                auto empty = card("contentCard");
+                auto layout = new QVBoxLayout(empty);
+                layout->setContentsMargins(18, 18, 18, 18);
+                auto label = new QLabel(tr("A little space for your thoughts\nWrite a note above or choose another filter."));
+                label->setObjectName("emptyState");
+                label->setAlignment(Qt::AlignCenter);
+                label->setMinimumHeight(150);
+                layout->addWidget(label);
                 rowLayout->addWidget(empty);
             }
         });
 }
 void MainWindow::addNote(const QJsonObject &memo) {
-    auto f = card();
+    auto f = card("noteCard");
     auto l = new QVBoxLayout(f);
-    l->setSpacing(10);
+    l->setContentsMargins(14, 12, 14, 13);
+    l->setSpacing(9);
     auto top = new QHBoxLayout;
     auto stamp = new QLabel(QDateTime::fromString(memo["createdAt"].toString(), Qt::ISODate)
                                 .toLocalTime()
                                 .toString("dd MMM yyyy · HH:mm"));
+    stamp->setObjectName("timestamp");
     top->addWidget(stamp);
     top->addStretch();
-    auto favorite = button(memo["favorite"].toBool() ? "★" : "☆"), edit = button(tr("Edit")),
-         menu = button("···");
+    auto favorite = iconButton(Glyph::Star, tr("Favorite"));
+    favorite->setCheckable(true);
+    favorite->setChecked(memo["favorite"].toBool());
+    auto edit = button(tr("Edit"));
+    edit->setObjectName("textAction");
+    edit->setIcon(lineIcon(Glyph::Edit));
+    auto menu = iconButton(Glyph::More, tr("More actions"));
     top->addWidget(favorite);
     top->addWidget(edit);
     top->addWidget(menu);
     l->addLayout(top);
     const auto uid = memo["uid"].toString();
-    connect(favorite, &QPushButton::clicked, this, [this, uid, memo] {
-        rpc("memos.favorite", {{"uid", uid}, {"favorite", !memo["favorite"].toBool()}},
-            [this](const QJsonValue &) {
-                refresh();
-                metadata();
-            });
+    connect(favorite, &QToolButton::toggled, this, [this, uid, favorite](bool checked) {
+        favorite->setEnabled(false);
+        backend.call(favorite, "memos.favorite", {{"uid", uid}, {"favorite", checked}},
+                     [this, favorite, checked](const QJsonValue &, const QString &code, const QString &message) {
+                         favorite->setEnabled(true);
+                         if (!code.isEmpty()) {
+                             QSignalBlocker blocker(favorite);
+                             favorite->setChecked(!checked);
+                             showError(message);
+                             return;
+                         }
+                         metadata();
+                     });
     });
     connect(edit, &QPushButton::clicked, this, [this, uid] { editNote(uid); });
-    connect(menu, &QPushButton::clicked, this, [this, uid, menu] {
+    connect(menu, &QToolButton::clicked, this, [this, uid, menu] {
         QMenu m;
-        auto share = m.addAction(tr("Share"));
-        auto remove = m.addAction(tr("Delete"));
+        auto share = m.addAction(lineIcon(Glyph::Share), tr("Share"));
+        auto remove = m.addAction(lineIcon(Glyph::Trash), tr("Delete"));
         auto chosen = m.exec(menu->mapToGlobal(QPoint(0, menu->height())));
         if (chosen == share)
             shareNote(uid);
@@ -571,15 +898,28 @@ void MainWindow::addNote(const QJsonObject &memo) {
                 metadata();
             });
     });
+
     auto text = new QTextBrowser;
+    text->setObjectName("notePreview");
     text->setDocument(new LocalTextDocument(text));
+    text->document()->setDocumentMargin(0);
     text->setOpenLinks(false);
+    text->setOpenExternalLinks(false);
     text->setFrameShape(QFrame::NoFrame);
+    text->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    text->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     loadNoteDocument(text->document(), memo["content"].toString());
-    text->setMinimumHeight(64);
-    text->setMaximumHeight(150);
+    text->setMinimumHeight(36);
+    text->setMaximumHeight(220);
     text->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto fitPreview = [text](QSizeF size) {
+        const int height = qBound(38, int(std::ceil(size.height())) + 8, 220);
+        text->setFixedHeight(height);
+    };
+    connect(text->document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged, text, fitPreview);
+    QTimer::singleShot(0, text, [text, fitPreview] { fitPreview(text->document()->size()); });
     l->addWidget(text);
+
     const auto files = memo["attachments"].toArray();
     bool images = false;
     for (const auto &a : files)
@@ -603,23 +943,53 @@ void MainWindow::addNote(const QJsonObject &memo) {
                          });
         });
     }
+    auto fileRow = new QWidget;
+    auto fileLayout = new QHBoxLayout(fileRow);
+    fileLayout->setContentsMargins(0, 0, 0, 0);
+    fileLayout->setSpacing(6);
+    int fileCount = 0;
     for (const auto &value : files) {
         auto a = value.toObject();
         if (a["mimeType"].toString().startsWith("image/"))
             continue;
         auto b = button(a["filename"].toString());
-        l->addWidget(b);
+        b->setObjectName("fileChip");
+        b->setIcon(lineIcon(Glyph::Attachment));
+        b->setToolTip(a["path"].toString());
+        fileLayout->addWidget(b);
+        ++fileCount;
         connect(b, &QPushButton::clicked, this,
                 [a] { QDesktopServices::openUrl(QUrl::fromLocalFile(a["path"].toString())); });
     }
-    if (!memo["tags"].toArray().isEmpty()) {
-        auto labels = new QLabel;
-        QStringList names;
-        for (const auto &t : memo["tags"].toArray())
-            names << "#" + t.toString();
-        labels->setText(names.join("  "));
-        labels->setWordWrap(true);
-        l->addWidget(labels);
+    if (fileCount) {
+        fileLayout->addStretch();
+        l->addWidget(fileRow);
+    } else {
+        delete fileRow;
+    }
+
+    const auto memoTags = memo["tags"].toArray();
+    if (!memoTags.isEmpty()) {
+        auto tagsWidget = new QWidget;
+        auto grid = new QGridLayout(tagsWidget);
+        grid->setContentsMargins(0, 0, 0, 0);
+        grid->setHorizontalSpacing(6);
+        grid->setVerticalSpacing(5);
+        int i = 0;
+        for (const auto &t : memoTags) {
+            const auto tagName = t.toString();
+            auto chip = button("#" + tagName);
+            chip->setObjectName("tagChip");
+            grid->addWidget(chip, i / 4, i % 4, Qt::AlignLeft);
+            ++i;
+            connect(chip, &QPushButton::clicked, this, [this, tagName] {
+                tag = tagName;
+                page = "home";
+                refresh();
+            });
+        }
+        grid->setColumnStretch(4, 1);
+        l->addWidget(tagsWidget);
     }
     rowLayout->addWidget(f);
 }
@@ -846,12 +1216,24 @@ void MainWindow::shareNote(const QString &uid) {
     dialog->open();
 }
 void MainWindow::settingsPage() {
-    auto f = card();
-    auto form = new QFormLayout(f);
+    auto appearanceCard = card("settingsCard");
+    auto appearanceLayout = new QVBoxLayout(appearanceCard);
+    appearanceLayout->setContentsMargins(16, 14, 16, 16);
+    appearanceLayout->setSpacing(10);
+    auto appearanceTitle = new QLabel(tr("Appearance"));
+    appearanceTitle->setObjectName("sectionTitle");
+    auto appearanceHint = new QLabel(tr("Choose a theme and typography that stay comfortable for long note sessions."));
+    appearanceHint->setObjectName("muted");
+    appearanceHint->setWordWrap(true);
+    appearanceLayout->addWidget(appearanceTitle);
+    appearanceLayout->addWidget(appearanceHint);
+    auto form = new QFormLayout;
+    form->setHorizontalSpacing(18);
+    form->setVerticalSpacing(10);
     auto appearance = new QComboBox;
     appearance->addItems({"System", "Light", "Dark"});
     appearance->setCurrentText(settings.value("appearance", "Light").toString());
-    form->addRow(tr("Appearance"), appearance);
+    form->addRow(tr("Theme"), appearance);
     connect(appearance, &QComboBox::currentTextChanged, this, [this](const QString &v) {
         settings.setValue("appearance", v);
         applyAppearance();
@@ -865,19 +1247,41 @@ void MainWindow::settingsPage() {
     });
     auto size = new QSpinBox;
     size->setRange(9, 24);
-    size->setValue(settings.value("fontSize", 11).toInt());
+    size->setValue(settings.value("fontSize", 10).toInt());
+    size->setSuffix(tr(" pt"));
     form->addRow(tr("Text size"), size);
     connect(size, &QSpinBox::valueChanged, this, [this](int n) {
         settings.setValue("fontSize", n);
         applyAppearance();
     });
+    appearanceLayout->addLayout(form);
+    rowLayout->addWidget(appearanceCard);
+
+    auto dataCard = card("settingsCard");
+    auto dataLayout = new QVBoxLayout(dataCard);
+    dataLayout->setContentsMargins(16, 14, 16, 16);
+    dataLayout->setSpacing(10);
+    auto dataTitle = new QLabel(tr("Data & backup"));
+    dataTitle->setObjectName("sectionTitle");
+    auto dataHint = new QLabel(tr("Your database and attachments stay local. Export a ZIP before moving devices or making major changes."));
+    dataHint->setObjectName("muted");
+    dataHint->setWordWrap(true);
+    dataLayout->addWidget(dataTitle);
+    dataLayout->addWidget(dataHint);
+    auto dataActions = new QHBoxLayout;
     auto folder = button(tr("Open data folder"));
-    form->addRow(folder);
-    connect(folder, &QPushButton::clicked, this,
-            [this] { QDesktopServices::openUrl(QUrl::fromLocalFile(dataPath)); });
-    auto exportFile = button(tr("Export ZIP backup")), importFile = button(tr("Import ZIP backup"));
-    form->addRow(exportFile);
-    form->addRow(importFile);
+    folder->setObjectName("outlineButton");
+    folder->setIcon(lineIcon(Glyph::Folder));
+    auto exportFile = button(tr("Export ZIP backup"));
+    exportFile->setObjectName("outlineButton");
+    auto importFile = button(tr("Import ZIP backup"));
+    importFile->setObjectName("outlineButton");
+    dataActions->addWidget(folder);
+    dataActions->addWidget(exportFile);
+    dataActions->addWidget(importFile);
+    dataActions->addStretch();
+    dataLayout->addLayout(dataActions);
+    connect(folder, &QPushButton::clicked, this, [this] { QDesktopServices::openUrl(QUrl::fromLocalFile(dataPath)); });
     connect(exportFile, &QPushButton::clicked, this, [this] {
         auto path = QFileDialog::getSaveFileName(
             this, tr("Export to a new file"),
@@ -905,13 +1309,33 @@ void MainWindow::settingsPage() {
             refresh();
         });
     });
+    rowLayout->addWidget(dataCard);
+
+    auto sharingCard = card("settingsCard");
+    auto sharingLayout = new QVBoxLayout(sharingCard);
+    sharingLayout->setContentsMargins(16, 14, 16, 16);
+    sharingLayout->setSpacing(10);
+    auto sharingTitle = new QLabel(tr("Local sharing"));
+    sharingTitle->setObjectName("sectionTitle");
+    auto sharingHint = new QLabel(tr("Share links are served only on this computer and the server starts only when you enable it."));
+    sharingHint->setObjectName("muted");
+    sharingHint->setWordWrap(true);
+    sharingLayout->addWidget(sharingTitle);
+    sharingLayout->addWidget(sharingHint);
+    auto sharingRow = new QHBoxLayout;
     auto sharing = new QCheckBox(tr("Enable local sharing"));
+    auto portLabel = new QLabel(tr("Port"));
+    portLabel->setObjectName("muted");
     auto port = new QSpinBox;
     port->setRange(0, 65535);
     port->setValue(settings.value("sharingPort", 8787).toInt());
-    port->setSpecialValueText(tr("Automatic port"));
-    form->addRow(sharing);
-    form->addRow(tr("Sharing port"), port);
+    port->setSpecialValueText(tr("Auto"));
+    port->setMaximumWidth(140);
+    sharingRow->addWidget(sharing);
+    sharingRow->addStretch();
+    sharingRow->addWidget(portLabel);
+    sharingRow->addWidget(port);
+    sharingLayout->addLayout(sharingRow);
     QPointer<QCheckBox> guard(sharing);
     backend.call(sharing, "metadata", {}, [guard](const QJsonValue &v, const QString &code, const QString &) {
         if (guard && code.isEmpty()) {
@@ -936,45 +1360,150 @@ void MainWindow::settingsPage() {
                          metadata();
                      });
     });
-    form->addRow(new QLabel(
-        tr("NoteHub %1 · Qt GUI + Go backend\nSharing is off on every launch.").arg(NOTEHUB_VERSION)));
-    rowLayout->addWidget(f);
+    auto version = new QLabel(tr("NoteHub %1  ·  Qt desktop + Go core").arg(NOTEHUB_VERSION));
+    version->setObjectName("muted");
+    sharingLayout->addWidget(version);
+    rowLayout->addWidget(sharingCard);
 }
 void MainWindow::applyAppearance() {
     const auto mode = settings.value("appearance", "Light").toString();
-    bool dark = mode == "Dark" ||
-                (mode == "System" && QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark);
+    const bool dark = mode == "Dark" ||
+                      (mode == "System" && QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark);
     QFont font(settings.value("fontFamily", qApp->font().family()).toString(),
-               settings.value("fontSize", 11).toInt());
+               settings.value("fontSize", 10).toInt());
     qApp->setFont(font);
-    QPalette p = qApp->style()->standardPalette();
-    if (dark) {
-        p.setColor(QPalette::Window, QColor("#101823"));
-        p.setColor(QPalette::WindowText, QColor("#e4ebf5"));
-        p.setColor(QPalette::Base, QColor("#172333"));
-        p.setColor(QPalette::AlternateBase, QColor("#203147"));
-        p.setColor(QPalette::Text, QColor("#e4ebf5"));
-        p.setColor(QPalette::Button, QColor("#233348"));
-        p.setColor(QPalette::ButtonText, QColor("#e4ebf5"));
-        p.setColor(QPalette::Mid, QColor("#35475f"));
-        p.setColor(QPalette::PlaceholderText, QColor("#96a6bd"));
-    }
-    p.setColor(QPalette::Highlight, QColor("#087bff"));
+
+    const QString bg = dark ? "#0e1622" : "#f5f7fb";
+    const QString surface = dark ? "#151f2d" : "#ffffff";
+    const QString surfaceAlt = dark ? "#1a2738" : "#f8fafc";
+    const QString rail = dark ? "#172435" : "#eef3f9";
+    const QString border = dark ? "#2d3d52" : "#dfe6ef";
+    const QString text = dark ? "#e8eef7" : "#172033";
+    const QString muted = dark ? "#95a6bc" : "#6b778c";
+    const QString blue = "#087bff";
+    const QString blueSoft = dark ? "#173b63" : "#e7f2ff";
+    const QString hover = dark ? "#22344a" : "#f0f5fb";
+
+    QPalette p;
+    p.setColor(QPalette::Window, QColor(bg));
+    p.setColor(QPalette::WindowText, QColor(text));
+    p.setColor(QPalette::Base, QColor(surface));
+    p.setColor(QPalette::AlternateBase, QColor(surfaceAlt));
+    p.setColor(QPalette::Text, QColor(text));
+    p.setColor(QPalette::Button, QColor(surface));
+    p.setColor(QPalette::ButtonText, QColor(text));
+    p.setColor(QPalette::Mid, QColor(border));
+    p.setColor(QPalette::PlaceholderText, QColor(muted));
+    p.setColor(QPalette::Highlight, QColor(blue));
+    p.setColor(QPalette::HighlightedText, Qt::white);
+    p.setColor(QPalette::Link, QColor(blue));
+    p.setColor(QPalette::ToolTipBase, QColor(surface));
+    p.setColor(QPalette::ToolTipText, QColor(text));
     qApp->setPalette(p);
-    qApp->setStyleSheet(
-        QString("QMainWindow{background:%1} QFrame#card{background:%2;border:1px solid "
-                "%3;border-radius:12px} QFrame#navigation{background:%4;border-radius:12px} "
-                "QLabel#brand{font-size:25px;font-weight:700} QLabel#heading{font-size:18px;font-weight:600} "
-                "QPushButton,QToolButton{padding:8px;border:0;border-radius:7px} "
-                "QPushButton:hover,QToolButton:hover{background:%4} "
-                "QToolButton:checked{background:%5;color:#087bff} "
-                "QPushButton#primary{background:#087bff;color:white;font-weight:600} "
-                "QLineEdit,QTextEdit,QPlainTextEdit{border:1px solid %3;border-radius:8px;padding:8px} "
-                "QTextBrowser{border:0;padding:0;background:transparent} "
-                "QScrollArea{border:0;background:transparent} QToolBar{border:0;spacing:2px} QToolBar "
-                "QToolButton{padding:5px}")
-            .arg(dark ? "#101823" : "#f7f9fc", dark ? "#172333" : "#ffffff", dark ? "#35475f" : "#e0e7f0",
-                 dark ? "#203147" : "#edf3fa", dark ? "#253d5c" : "#dfeeff"));
+
+    qApp->setStyleSheet(QString(R"QSS(
+        QWidget { color:%1; }
+        QWidget#appRoot { background:%2; }
+        QFrame#workspace { background:%3; border:1px solid %4; border-radius:14px; }
+        QFrame#sideRail { background:%5; border:1px solid %4; border-radius:14px; }
+        QWidget#rightColumn { background:transparent; }
+        QFrame#card, QFrame#contentCard, QFrame#composerCard, QFrame#noteCard,
+        QFrame#sideCard, QFrame#settingsCard, QFrame#attachmentRow {
+            background:%3; border:1px solid %4; border-radius:12px;
+        }
+        QFrame#noteCard:hover, QFrame#attachmentRow:hover { border-color:%6; }
+        QFrame#quickRow { background:transparent; border:0; border-radius:8px; }
+        QFrame#quickRow:hover { background:%7; }
+        QFrame#railSeparator { color:%4; background:%4; max-height:1px; border:0; margin:5px 4px; }
+        QLabel#brand { font-size:26px; font-weight:700; letter-spacing:-0.4px; }
+        QLabel#heading { font-size:18px; font-weight:700; }
+        QLabel#sideTitle, QLabel#sectionTitle { font-size:14px; font-weight:700; }
+        QLabel#muted, QLabel#timestamp, QLabel#stagedFiles { color:%8; }
+        QLabel#timestamp { font-size:12px; }
+        QLabel#stagedFiles { font-size:12px; padding-left:4px; }
+        QLabel#emptyState { color:%8; font-size:13px; }
+        QLabel#countBadge { background:%9; color:%6; border-radius:10px; min-width:24px; max-width:36px;
+                            padding:2px 5px; font-weight:700; }
+
+        QLineEdit#globalSearch { background:%3; border:1px solid %4; border-radius:11px; padding:0 12px; }
+        QLineEdit#globalSearch:focus { border:1px solid %6; }
+        QTextEdit#composer { background:%3; border:1px solid %4; border-radius:9px; padding:8px; }
+        QTextEdit#composer:focus { border:1px solid %6; }
+        QTextBrowser#notePreview { background:transparent; border:0; padding:0; }
+
+        QPushButton, QToolButton { border:0; border-radius:8px; padding:7px 10px; background:transparent; }
+        QPushButton:hover, QToolButton:hover { background:%7; }
+        QPushButton:pressed, QToolButton:pressed { background:%9; }
+        QPushButton#primary { background:%6; color:white; font-weight:700; padding:8px 15px; }
+        QPushButton#primary:hover { background:#006fe8; }
+        QPushButton#outlineButton { background:%3; border:1px solid %4; padding:7px 11px; }
+        QPushButton#outlineButton:hover { border-color:%6; background:%9; }
+        QPushButton#subtleButton, QPushButton#textAction, QPushButton#composerAction { color:%1; }
+        QPushButton#subtleButton { color:%8; }
+        QPushButton#composerAction { font-weight:600; padding:6px 8px; }
+        QPushButton#textAction { font-weight:600; padding:5px 8px; }
+        QPushButton#tagChip { background:%9; color:%6; border-radius:12px; padding:4px 9px; font-weight:600; }
+        QPushButton#fileChip { background:%7; border:1px solid %4; padding:5px 9px; }
+        QPushButton#fileLink { text-align:left; padding:0; font-weight:600; }
+        QPushButton#fileLink:hover { color:%6; background:transparent; }
+        QPushButton#tagCard { text-align:left; background:%10; border:1px solid %4; padding:10px 12px; font-weight:600; }
+        QPushButton#tagCard:hover { border-color:%6; background:%9; }
+        QPushButton#headerIconButton { padding:7px; }
+        QToolButton#iconButton, QToolButton#dangerIconButton { padding:6px; }
+        QToolButton#dangerIconButton:hover { background:rgba(214,63,63,0.10); }
+        QToolButton#navButton { text-align:left; padding:9px 10px; }
+        QToolButton#navButton:checked { background:%9; color:%6; font-weight:700; }
+        QToolButton#quickButton { text-align:left; padding:7px 4px; }
+
+        QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QFontComboBox {
+            background:%3; border:1px solid %4; border-radius:8px; padding:6px 8px; selection-background-color:%6;
+        }
+        QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {
+            border-color:%6;
+        }
+        QComboBox::drop-down, QSpinBox::up-button, QSpinBox::down-button { border:0; }
+        QCheckBox { spacing:8px; }
+        QCheckBox::indicator { width:17px; height:17px; }
+
+        QScrollArea, QWidget#rows { border:0; background:transparent; }
+        QScrollBar:vertical { background:transparent; width:8px; margin:2px; }
+        QScrollBar::handle:vertical { background:%4; min-height:28px; border-radius:4px; }
+        QScrollBar::handle:vertical:hover { background:%8; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }
+
+        QCalendarWidget { background:transparent; border:0; }
+        QCalendarWidget QWidget#qt_calendar_navigationbar { background:transparent; }
+        QCalendarWidget QToolButton { font-weight:700; padding:5px; }
+        QCalendarWidget QMenu { background:%3; border:1px solid %4; }
+        QCalendarWidget QSpinBox { background:transparent; border:0; }
+        QCalendarWidget QAbstractItemView { background:transparent; border:0; outline:0; selection-background-color:%9;
+                                            selection-color:%6; alternate-background-color:transparent; }
+        QCalendarWidget QAbstractItemView::item:hover { background:%7; border-radius:6px; }
+
+        QMenu { background:%3; border:1px solid %4; padding:5px; }
+        QMenu::item { padding:7px 22px 7px 10px; border-radius:6px; }
+        QMenu::item:selected { background:%9; color:%6; }
+        QToolTip { background:%3; color:%1; border:1px solid %4; padding:5px; }
+        QMessageBox, QDialog { background:%2; }
+        QListWidget { background:%3; border:1px solid %4; border-radius:8px; padding:4px; }
+        QListWidget::item { padding:6px; border-radius:6px; }
+        QListWidget::item:selected { background:%9; color:%6; }
+        QTabWidget::pane { border:1px solid %4; border-radius:8px; background:%3; top:-1px; }
+        QTabBar::tab { background:transparent; padding:7px 12px; color:%8; }
+        QTabBar::tab:selected { color:%6; font-weight:700; border-bottom:2px solid %6; }
+        QToolBar { background:%10; border:1px solid %4; border-radius:8px; spacing:2px; padding:3px; }
+        QToolBar QToolButton { padding:5px 7px; }
+    )QSS")
+        .arg(text)
+        .arg(bg)
+        .arg(surface)
+        .arg(border)
+        .arg(rail)
+        .arg(blue)
+        .arg(hover)
+        .arg(muted)
+        .arg(blueSoft)
+        .arg(surfaceAlt));
 }
 void MainWindow::closeEvent(QCloseEvent *e) {
     if (backend.busy()) {

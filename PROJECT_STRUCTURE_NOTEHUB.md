@@ -1,328 +1,178 @@
-# NoteHub – Project Structure đề xuất
+# NoteHub – Current Project Structure
 
-## Mục tiêu
+## Technology stack
 
-NoteHub là phần mềm desktop ghi chú nhanh theo dạng timeline, chạy trên:
+NoteHub now runs as two cooperating desktop processes:
 
-- Windows
-- macOS
-- Linux
+- **C++17 + Qt 6 Widgets**: native desktop GUI (`NoteHub.exe`).
+- **Go**: domain/service/repository/storage backend (`notehub-core.exe`).
+- **SQLite + FTS5**: local database and text search.
+- **Filesystem**: attachment storage.
+- **JSON Lines over stdin/stdout**: local IPC managed by `QProcess`.
 
-Stack đề xuất:
+The previous Go/Fyne GUI is kept only under `_legacy_fyne/` for reference and is not part of the production desktop build.
 
-- **Go**: toàn bộ ứng dụng và business logic.
-- **Fyne v2**: GUI desktop thuần Go.
-- **SQLite**: database local.
-- **Filesystem**: lưu file đính kèm.
-- Không dùng React, TypeScript, HTML hoặc CSS.
-
-## Kiến trúc
+## Runtime dependency direction
 
 ```text
-UI (Fyne)
-   ↓
+Qt GUI
+  │
+  │ JSON IPC
+  ▼
+Go IPC server
+  ▼
 Service
-   ↓
+  ▼
 Repository / Storage
-   ↓
-SQLite + Filesystem
+  ├── SQLite + FTS5
+  └── Filesystem
 ```
 
-Nguyên tắc quan trọng: **UI không truy cập SQLite trực tiếp**.
+The Qt GUI never accesses SQLite directly. The Go backend remains the single owner of persistence and business rules.
 
-## Cấu trúc thư mục chuẩn
+## Current source tree
 
 ```text
 NoteHub/
+├── CMakeLists.txt
+├── desktop/
+│   ├── CMakeLists.txt
+│   ├── resources.qrc
+│   ├── src/
+│   │   ├── main.cpp
+│   │   ├── BackendClient.h
+│   │   ├── BackendClient.cpp
+│   │   ├── MainWindow.h
+│   │   ├── MainWindow.cpp
+│   │   ├── NoteEditor.h
+│   │   ├── NoteEditor.cpp
+│   │   ├── ImageGallery.h
+│   │   └── ImageGallery.cpp
+│   └── tests/
+│       ├── FakeCore.cpp
+│       └── UiTests.cpp
 ├── cmd/
-│   └── notehub/
+│   └── notehub-core/
 │       └── main.go
 ├── internal/
 │   ├── app/
-│   │   ├── app.go
-│   │   ├── startup.go
-│   │   └── shutdown.go
 │   ├── domain/
-│   │   ├── memo.go
-│   │   ├── attachment.go
-│   │   ├── tag.go
-│   │   ├── calendar.go
-│   │   └── share.go
+│   ├── ipc/
 │   ├── service/
-│   │   ├── memo_service.go
-│   │   ├── attachment_service.go
-│   │   ├── timeline_service.go
-│   │   ├── calendar_service.go
-│   │   ├── tag_service.go
-│   │   ├── search_service.go
-│   │   ├── share_service.go
-│   │   └── backup_service.go
 │   ├── repository/
-│   │   ├── memo_repository.go
-│   │   ├── attachment_repository.go
-│   │   ├── tag_repository.go
-│   │   ├── share_repository.go
 │   │   └── sqlite/
-│   │       ├── database.go
-│   │       ├── schema.go
-│   │       ├── migration.go
-│   │       ├── memo_repository.go
-│   │       ├── attachment_repository.go
-│   │       ├── tag_repository.go
-│   │       └── share_repository.go
 │   ├── storage/
-│   │   ├── attachment_store.go
-│   │   ├── paths.go
-│   │   └── checksum.go
 │   ├── backup/
-│   │   ├── export.go
-│   │   ├── import.go
-│   │   ├── manifest.go
-│   │   └── safezip.go
 │   ├── share/
-│   │   ├── server.go
-│   │   └── handler.go
 │   ├── tagparse/
-│   │   ├── tags.go
-│   │   └── tags_test.go
-│   ├── platform/
-│   │   ├── paths.go
-│   │   ├── paths_windows.go
-│   │   ├── paths_darwin.go
-│   │   ├── paths_linux.go
-│   │   ├── opener.go
-│   │   ├── opener_windows.go
-│   │   ├── opener_darwin.go
-│   │   └── opener_linux.go
-│   └── ui/
-│       ├── window.go
-│       ├── navigation.go
-│       ├── theme.go
-│       ├── rails.go
-│       ├── typography/
-│       │   └── fonts.go
-│       ├── screens/
-│       │   ├── timeline.go
-│       │   ├── calendar.go
-│       │   ├── search.go
-│       │   ├── attachments.go
-│       │   └── settings.go
-│       ├── components/
-│       │   ├── sidebar.go
-│       │   ├── memo_editor.go
-│       │   ├── memo_card.go
-│       │   ├── timeline_list.go
-│       │   ├── tag_list.go
-│       │   ├── search_bar.go
-│       │   ├── attachment_card.go
-│       │   ├── image_gallery.go
-│       │   ├── surface.go
-│       │   └── calendar_widget.go
-│       └── dialogs/
-│           ├── attachment.go
-│           ├── share.go
-│           ├── export.go
-│           ├── import.go
-│           └── confirm.go
+│   ├── notecontent/
+│   └── platform/
 ├── assets/
 │   ├── icons/
+│   │   ├── NoteHub.png
+│   │   └── NoteHub_White.png
 │   └── images/
-├── packaging/
-│   ├── windows/
-│   ├── macos/
-│   └── linux/
 ├── scripts/
 │   ├── build-windows.ps1
-│   ├── build-macos.sh
-│   └── build-linux.sh
-├── .github/
-│   └── workflows/
-│       ├── test.yml
-│       └── release.yml
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── DATABASE.md
-│   └── BUILD.md
+│   ├── deploy-windows.ps1
+│   ├── build-linux.sh
+│   └── build-macos.sh
 ├── tests/
 │   └── integration/
+├── _legacy_fyne/
+├── docs/
+│   └── ARCHITECTURE.md
 ├── go.mod
 ├── go.sum
-├── LICENSE
-├── NOTICE.md
-├── README.md
-└── .gitignore
-
+└── README.md
 ```
 
-## Trách nhiệm từng tầng
+## Desktop responsibilities
 
-### `cmd/notehub`
-Entry point duy nhất của chương trình. `main.go` chỉ khởi tạo application và gọi `Run()`.
+### `desktop/src/main.cpp`
+
+Creates `QApplication`, selects the stable Fusion base style, chooses a platform-appropriate default font, parses command-line options and opens `MainWindow`. The default backend is resolved beside the GUI executable as `notehub-core.exe` on Windows.
+
+### `desktop/src/BackendClient.*`
+
+Owns the Go child process and the JSON-lines transport. It validates reply IDs/protocol, keeps stderr diagnostics separate from stdout, enforces request size/time limits and stops the backend cleanly when the GUI exits.
+
+### `desktop/src/MainWindow.*`
+
+Owns the desktop shell and page routing:
+
+- responsive left navigation rail;
+- embedded NoteHub logo;
+- global `Ctrl+K` search;
+- Home composer;
+- timeline/Favorites/Shared views;
+- Calendar;
+- Attachments manager;
+- Tags browser;
+- Settings;
+- right-side calendar + Quick Filters.
+
+The redesign uses fixed responsive breakpoints rather than continuously shrinking controls. The left rail is 68 px compact or 212 px expanded. The right context panel is hidden below 1180 px. This preserves center workspace width and avoids clipped labels.
+
+`MainWindow` also owns the application palette/QSS. Standard Qt platform icons were replaced by high-DPI line icons painted with `QPainter`, so Windows no longer shows a mixture of old Explorer-style folder/file icons inside the modern shell.
+
+### `desktop/src/ImageGallery.*`
+
+Loads previews asynchronously and caches bounded decoded images. Gallery geometry is now a stable grid of one to four columns. Incomplete final rows keep the same tile width as earlier rows, preventing the oversized previews visible in the previous Qt UI.
+
+### `desktop/src/NoteEditor.*`
+
+Provides rich text plus Markdown-source editing. The editor uses the same application theme, a fixed non-floating toolbar and document-style tabs. Existing revision/conflict semantics are unchanged because saving still goes through the Go backend.
+
+## Go backend responsibilities
+
+### `cmd/notehub-core`
+
+Starts `internal/app.OpenBackend`, then serves the local IPC protocol.
+
+### `internal/ipc`
+
+Maps JSON IPC methods to backend services. stdout is protocol-only; diagnostics go to stderr.
 
 ### `internal/app`
-Composition root: xác định AppData, mở SQLite, chạy migration, khởi tạo repository/service/UI, quản lý startup và shutdown.
+
+Composition root: resolves data directory, opens SQLite, runs migrations, constructs repositories/services/storage and closes resources.
 
 ### `internal/domain`
-Các model thuần nghiệp vụ: Memo, Attachment, Tag, Calendar, Share. Không phụ thuộc GUI, SQLite hay HTTP.
+
+Pure business data types such as Memo, Attachment, Tag, Calendar and Share.
 
 ### `internal/service`
-Business logic chính của NoteHub:
-- Memo CRUD
-- Attachment
-- Timeline
-- Calendar
-- Tags
-- Search
-- Share
-- Import/Export
 
-### `internal/repository`
-Chứa interface persistence. GUI và service chỉ phụ thuộc interface.
+Business operations for memo CRUD, attachments, timeline, calendar, search, tags, sharing and backup.
 
 ### `internal/repository/sqlite`
-SQLite implementation, schema và migration.
+
+SQLite schema, migrations and repository implementation. The UI never imports this package.
 
 ### `internal/storage`
-Quản lý file attachment trên filesystem, checksum, đường dẫn an toàn.
+
+Attachment filesystem paths, checksums and safe file operations.
 
 ### `internal/backup`
-Export/Import ZIP, manifest version và chống ZIP path traversal.
+
+ZIP export/import and safe archive path validation.
 
 ### `internal/share`
-HTTP server chia sẻ ghi chú. Chỉ bật khi người dùng kích hoạt Share.
 
-### `internal/tagparse`
-Parser cho `#tag` và tag phân cấp như `#project/fpga`.
+Optional loopback HTTP sharing server.
 
-### `internal/platform`
-Tách code đặc thù theo Windows/macOS/Linux bằng Go build tags.
+## GUI algorithms changed in the current redesign
 
-### `internal/ui`
-GUI Fyne. Chia rõ `screens`, `components`, `dialogs`. `rails.go` quản lý bố cục
-3 vùng responsive, kéo thay đổi độ rộng và collapse sidebar mà không refresh
-lại toàn bộ cây widget trong lúc kéo. `components/surface.go` tạo panel bo góc:
-sidebar dùng nền phủ nhẹ, workspace dùng nền trung tính và khoảng trống giữa các
-panel thay cho vạch phân cách cố định.
+1. **Responsive shell**: compact rail under 980 px or by user preference; right panel under 1180 px; center workspace receives remaining width.
+2. **Stable icon system**: `QPainter` renders normal/selected high-DPI pixmaps instead of platform standard icons.
+3. **Visual hierarchy**: app background → rail → workspace/context cards → content cards; accent color only for interaction/focus.
+4. **Attachment staging**: shows a compact count plus tooltip rather than wrapping all staged filenames into the composer.
+5. **Timeline preview**: note text preview is bounded to keep scanning predictable; full editing stays in the editor dialog.
+6. **Gallery grid**: 1–4 columns, equal tile widths across all rows, preview height bounded to 130–205 px.
+7. **Optimistic favorite UX**: favorite button changes immediately, is locked while saving and reverts on backend error.
+8. **Tags**: card grid instead of full-width centered rows.
+9. **Settings**: grouped by Appearance, Data & backup and Local sharing.
+10. **Quick Filters**: live note/favorite/shared counts are shown in the right context panel instead of a permanent status bar.
 
-`components/image_gallery.go` hiển thị ảnh theo đúng tỉ lệ (`ImageFillContain`),
-hỗ trợ kéo đổi thứ tự và xóa ảnh trong editor. Khi kéo, ghost preview đi theo
-chuột còn các tile lân cận chạy animation ease-out vào vị trí dự kiến; hit-test
-dựa trên slot ổn định nên animation không làm target rung/nhảy. Drop cập nhật
-thứ tự cục bộ ngay để UI không giật, sau đó ghi toàn bộ attachment ID xuống DB;
-Home reload lại từ DB nếu ghi thất bại và Edit khôi phục snapshot đã lưu.
-`screens/previews.go` giải mã ảnh ngoài UI thread, giới hạn ảnh nguồn 12 MP, tạo
-preview tối đa 640 × 420 và giữ cache hữu hạn để tránh tăng RAM không kiểm soát.
-
-`ui/typography/fonts.go` phát hiện các font phổ biến đã cài trên Windows/macOS/
-Linux và tải lazy bằng Fyne resource. Font không tồn tại tự fallback về System;
-NoteHub không đóng gói hoặc phân phối file font. Text size cho phép 10–32 logical
-px và tiếp tục tôn trọng DPI scale của hệ điều hành.
-
-## Dữ liệu người dùng
-
-Không lưu database cạnh file thực thi.
-
-Windows:
-```text
-%LOCALAPPDATA%\NoteHub\
-├── notehub.db
-└── attachments\
-```
-
-macOS:
-```text
-~/Library/Application Support/NoteHub/
-├── notehub.db
-└── attachments/
-```
-
-Linux:
-```text
-~/.local/share/NoteHub/
-├── notehub.db
-└── attachments/
-```
-
-## Quy tắc phụ thuộc
-
-```text
-ui → service → repository interface
-                    ↓
-               sqlite implementation
-
-service → storage
-service → backup
-service → share
-```
-
-Không cho phép:
-```text
-ui → sqlite
-domain → fyne
-domain → sqlite
-repository → ui
-```
-
-## Mapping từ source NoteHub hiện tại
-
-| Source hiện tại | Vị trí mới |
-|---|---|
-| `backend/model.go` | `internal/domain/` |
-| `backend/memo.go` | `internal/service/memo_service.go` + `internal/repository/sqlite/memo_repository.go` |
-| `backend/attachment.go` | `internal/service/attachment_service.go` + `internal/storage/` + repository |
-| `backend/calendar.go` | `internal/service/calendar_service.go` |
-| `backend/tag.go` | `internal/service/tag_service.go` |
-| `backend/search.go` | `internal/service/search_service.go` |
-| `backend/share.go` | `internal/service/share_service.go` |
-| `backend/share_http.go` | `internal/share/` |
-| `backend/export.go` | `internal/backup/export.go` |
-| `backend/import.go` | `internal/backup/import.go` |
-| `internal/safezip/` | `internal/backup/safezip.go` |
-| `internal/tagparse/` | giữ trong `internal/tagparse/` |
-| `backend/schema.go` | `internal/repository/sqlite/schema.go` |
-| `backend/sqlite_driver.go` | `internal/repository/sqlite/database.go` |
-| `backend/os_helpers.go` | `internal/platform/` |
-
-## Module path
-
-Nên đổi `go.mod` sang:
-
-```go
-module github.com/NguyenHien-8/NoteHub
-```
-
-## Release
-
-Một source code, build native theo từng hệ điều hành:
-
-```text
-Git tag vX.Y.Z
-      │
-      ├── Windows runner → NoteHub.exe / installer
-      ├── macOS runner   → NoteHub.app / DMG
-      └── Linux runner   → binary / AppImage / DEB
-```
-
-## Kết luận
-
-Đây là cấu trúc nên dùng làm kiến trúc chuẩn cho NoteHub từ giai đoạn hiện tại. Nó giữ backend độc lập với GUI, hỗ trợ mở rộng lâu dài và tránh phải viết lại business logic nếu sau này thay đổi framework GUI.
-
-`components/note_editor.go` là editor văn bản/Markdown dùng chung `Memo.Content`.
-Toolbar có icon cho Bold, Italic, Underline, Strike, Size, Text Color, Highlight,
-Clear Formatting, Bullets, Numbering, Indent và Outdent; Undo/Redo cùng import/
-export `.md` vẫn làm việc trên draft. Các style ngoài Markdown chuẩn được mã hóa
-bằng một allowlist inline HTML nhỏ và `markdown_view.go` render cục bộ, không tải
-URL ngoài. `dialogs/memo.go` dùng editor này cho Edit Note và dùng MarkdownView
-cho hộp thoại xem ghi chú.
-
-Startup Windows dùng `platform.InitialWindowSize()` với Windows system DPI +
-Fyne user scale; tuyệt đối không lấy `Canvas.Scale()` trước `Show` vì lúc đó Fyne
-vẫn trả 1.0. Trước khi Fyne tạo native window, `Desktop.Show()` tạm bật GLFW
-`Maximized` creation hint. Fyne tạo cửa sổ desktop ở trạng thái hidden, vì vậy
-frame đầu tiên nhìn thấy đã được Windows maximize đúng work area thay vì hiện một
-cửa sổ thường rồi mới phóng lớn. Hint global được reset ngay sau `Show()` để không
-ảnh hưởng các window về sau. Windows vẫn tự quyết định taskbar, title bar, border
-và per-monitor DPI. `Rails.OnLeftCompactChanged` nối trực tiếp với `Sidebar.SetCompact`,
-đảm bảo rail thu gọn chỉ còn icon Home/Calendar/Search/Attachments/Tags/Settings/
-My Tags thay vì cắt nửa text. Nút toggle ở header dùng SVG theo theme và đổi glyph
-theo trạng thái expanded/compact để phản hồi trực quan giống activity bar.
+See `docs/ARCHITECTURE.md` for the algorithms and interaction rationale in detail.
