@@ -22,11 +22,20 @@ notehub-core.exe (Go)
 The current Windows script targets a Qt MinGW kit and Ninja. Example for Qt 6.11.2:
 
 ```powershell
+
+Remove-Item ".\build\qt-release" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item ".\dist\windows" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+```powershell
+
 cd E:\ALL_PROJECTS\GIT_REPOSITORY\OFFICE_EDITOR\NoteHub
 
 .\scripts\build-windows.ps1 `
     -QtRoot "C:\Qt\6.11.2\mingw_64" `
-    -Compiler "C:\Qt\Tools\mingw1310_64\bin\g++.exe"
+    -Compiler "C:\Qt\Tools\mingw1310_64\bin\g++.exe" `
+    -Clean `
+    -ForceCloseRunning
 ```
 
 Run the packaged application from:
